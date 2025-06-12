@@ -18,27 +18,12 @@ else:
     raise Exception(f"Authentication failed: {response.text}")
 
 # Step 2: Use the access token to query and download products
-api_url = "https://apihub.dataspace.copernicus.eu/apihub"  # Update this to the correct query API if necessary
+api_url = "https://sh.dataspace.copernicus.eu/api/v1/process"  # Update this to the correct query API if necessary
 
 # Pass the token to SentinelAPI
 headers = {"Authorization": f"Bearer {access_token}"}
-api = SentinelAPI("srajesh2712@gmail.com", "Rajesh@27121984", api_url)
+search_url = "https://catalogue.dataspace.copernicus.eu/odata/v1/Products?$filter=..."
 
-# Define your area of interest
-footprint = geojson_to_wkt(read_geojson('your_aoi.geojson'))
+response = requests.get(search_url, headers=headers)
+print(response.json())
 
-# Query GRD products
-products = api.query(
-    footprint,
-    date=('20240101', '20240601'),
-    platformname='Sentinel-1',
-    producttype='GRD',
-    sensoroperationalmode='IW',
-    polarisationmode='VV VH'
-)
-
-# Print number of products found
-print(f"Number of products found: {len(products)}")
-
-# Download all matching products
-api.download_all(products)

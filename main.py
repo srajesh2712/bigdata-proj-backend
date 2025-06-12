@@ -1,43 +1,44 @@
-import os
+import requests
+from sentinelsat import SentinelAPI, geojson_to_wkt, read_geojson
 
-from pymongo.mongo_client import MongoClient
-from pymongo.server_api import ServerApi
+# Step 1: Authenticate with the Copernicus Data Space Ecosystem
+auth_url = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+payload = {
+    "username": "srajesh2712@gmail.com",
+    "password": "Rajesh@27121984",
+    "grant_type": "password",
+    "client_id": "cdse-public"
+}
+response = requests.post(auth_url, data=payload)
 
-from dotenv import load_dotenv
-from sentinelsat import SentinelAPI, read_geojson, geojson_to_wkt
+if response.status_code == 200:
+    access_token = response.json().get("access_token")
+    print("Authentication successful!")
+else:
+    raise Exception(f"Authentication failed: {response.text}")
 
+# Step 2: Use the access token to query and download products
+api_url = "https://apihub.dataspace.copernicus.eu/apihub"  # Update this to the correct query API if necessary
 
-load_dotenv()
+# Pass the token to SentinelAPI
+headers = {"Authorization": f"Bearer {access_token}"}
+api = SentinelAPI("srajesh2712@gmail.com", "Rajesh@27121984", api_url)
 
-def connect_to_mongo():
-    MONGOLAB_URI = os.getenv('MONGOLAB_URI')
-    # creating mongo client
-    client = MongoClient(MONGOLAB_URI, server_api = ServerApi('1'))
-
-    # sending a ping to test connection
-
-    try:
-        client.admin.command('ping')
-        print(' pinged to Mongodb . successfully connected ')
-    except Exception as e:
-        print(e)
-
-
-
-# Connect to Copernicus API (replace with your username and password)
-#curl -s -X POST https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token -H "Content-Type: application/x-www-form-urlencoded" -d "username=srajesh2712@gmail.com" -d "password=Rajesh@27121984" -d "grant_type=password" -d "client_id=cdse-public"
-api = SentinelAPI('your_username', 'your_password', 'https://scihub.copernicus.eu/dhus')
-
-# Define your area of interest (GeoJSON or WKT)
+# Define your area of interest
 footprint = geojson_to_wkt(read_geojson('your_aoi.geojson'))
 
-# Query GRD products for a date range and cloud cover
-products = api.query(footprint,
-                     date=('20240101', '20240601'),
-                     platformname='Sentinel-1',
-                     producttype='GRD',
-                     sensoroperationalmode='IW',
-                     polarisationmode='VV VH')
+# Query GRD products
+products = api.query(
+    footprint,
+    date=('20240101', '20240601'),
+    platformname='Sentinel-1',
+    producttype='GRD',
+    sensoroperationalmode='IW',
+    polarisationmode='VV VH'
+)
+
+# Print number of products found
+print(f"Number of products found: {len(products)}")
 
 # Download all matching products
 api.download_all(products)

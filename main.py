@@ -25,6 +25,7 @@ def connect_to_mongo():
 
 
 # Connect to Copernicus API (replace with your username and password)
+#curl -s -X POST https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token -H "Content-Type: application/x-www-form-urlencoded" -d "username=srajesh2712@gmail.com" -d "password=Rajesh@27121984" -d "grant_type=password" -d "client_id=cdse-public"
 api = SentinelAPI('your_username', 'your_password', 'https://scihub.copernicus.eu/dhus')
 
 # Define your area of interest (GeoJSON or WKT)

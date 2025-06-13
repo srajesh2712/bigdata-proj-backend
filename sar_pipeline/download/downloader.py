@@ -28,3 +28,10 @@ search_url = "https://catalogue.dataspace.copernicus.eu/odata/v1/Products"
 response = requests.get(search_url, headers=headers)
 print(response.json())
 
+def download_sentinel1_data(product_id, output_dir):
+    """
+    Simulate download (you’ll replace this with your logic).
+    """
+    print(f"Downloading product {product_id} to {output_dir}...")
+    # Simulate download
+    return f"{output_dir}/{product_id}.zip"

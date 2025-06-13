@@ -34,8 +34,10 @@ def run_snap_graph(graph_path, input_file, output_file):
 
 if __name__ == "__main__":
 
-    graph_xml = "E:\\Big Data\\Summer Project\\AssamFlood2023\\preprocessinggraph.xml"  # Your saved XML
-    input_safe = "E:\\Big Data\\Summer Project\\AssamFlood2023\\S1A_IW_GRDH_1SDV_20230805T114911_20230805T114936_049740_05FB26_334C.SAFE"  # Full path to manifest.safe
-    output_file = "E:\\Big Data\\Summer Project\\AssamFlood2023\\processed\\processed_output.tif"  # Output path
+    graph_xml = "E:\\Big Data\\Summer Project\\AssamFlood2023\\preprocessinggraph1.xml"  # Your saved XML
+    input_safe = "E:\\Big Data\\Summer Project\\AssamFlood2023\\S1A_IW_GRDH_1SDV_20230805T114911_20230805T114936_049740_05FB26_334C_Cal_Spk_TC.dim"  # Full path to manifest.safe
+    output_file = "E:\\Big Data\\Summer Project\\AssamFlood2023\\processed\\processed_output_from_python.tif"  # Output path
 
     run_snap_graph(graph_xml, input_safe, output_file)
+
+

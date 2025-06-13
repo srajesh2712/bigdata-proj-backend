@@ -14,6 +14,7 @@ response = requests.post(auth_url, data=payload)
 if response.status_code == 200:
     access_token = response.json().get("access_token")
     print("Authentication successful!")
+    print(access_token)
 else:
     raise Exception(f"Authentication failed: {response.text}")
 
@@ -22,8 +23,15 @@ api_url = "https://sh.dataspace.copernicus.eu/api/v1/process"  # Update this to 
 
 # Pass the token to SentinelAPI
 headers = {"Authorization": f"Bearer {access_token}"}
-search_url = "https://catalogue.dataspace.copernicus.eu/odata/v1/Products?$filter=..."
+search_url = "https://catalogue.dataspace.copernicus.eu/odata/v1/Products"
 
 response = requests.get(search_url, headers=headers)
 print(response.json())
 
+def download_sentinel1_data(product_id, output_dir):
+    """
+    Simulate download (you’ll replace this with your logic).
+    """
+    print(f"Downloading product {product_id} to {output_dir}...")
+    # Simulate download
+    return f"{output_dir}/{product_id}.zip"

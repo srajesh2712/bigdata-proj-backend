@@ -1,8 +1,8 @@
 from download.downloader import download_sentinel1_data
-from preprocessing.apply_orbit import apply_orbit_correction
-from preprocessing.calibrate import calibrate_image
-from preprocessing.speckle_filter import apply_speckle_filter
-from preprocessing.terrain_correction import apply_terrain_correction
+from sar_pipeline.preprocessing.unused.apply_orbit import apply_orbit_correction
+from sar_pipeline.preprocessing.unused.calibrate import calibrate_image
+from sar_pipeline.preprocessing.unused.speckle_filter import apply_speckle_filter
+from sar_pipeline.preprocessing.unused.terrain_correction import apply_terrain_correction
 from utils.helper import ensure_directory
 
 def run_pipeline(product_id, base_output_dir):

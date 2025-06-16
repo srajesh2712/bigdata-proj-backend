@@ -7,7 +7,7 @@ print(rasterio.__version__)
 
 
 # Load the GeoTIFF
-with rasterio.open('E:\\Big Data\\Summer Project\\AssamFlood2023\\processed\\processed_output_from_python.tif') as src:
+with rasterio.open('E:\\Big Data\\Summer Project\\Assam-June5-2025\\Flood-June5-2025\\20240605\\output\\1750044647.7367983\\output_file.tif') as src:
     backscatter = src.read(1)
     profile = src.profile
 

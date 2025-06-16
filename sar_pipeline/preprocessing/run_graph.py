@@ -1,5 +1,6 @@
 import subprocess
 import os
+import time
 
 
 def run_snap_graph(graph_path, input_file, output_file):
@@ -33,9 +34,15 @@ def run_snap_graph(graph_path, input_file, output_file):
 
 
 if __name__ == "__main__":
-
-    graph_xml = "E:\\Big Data\\Summer Project\\AssamFlood2023\\preprocessinggraph.xml"  # Your saved XML
-    input_safe = "E:\\Big Data\\Summer Project\\AssamFlood2023\\S1A_IW_GRDH_1SDV_20230805T114911_20230805T114936_049740_05FB26_334C.SAFE"  # Full path to manifest.safe
-    output_file = "E:\\Big Data\\Summer Project\\AssamFlood2023\\processed\\processed_output.tif"  # Output path
+    base_path = "E:\Big Data\Summer Project\Assam-June5-2025\Flood-June5-2025\\20240605"
+    graph_xml_path = "E:\Big Data\Summer Project\AssamFlood2023"
+    safe_folder_path = "S1A_IW_GRDH_1SDV_20240605T115717_20240605T115742_054188_06970B_2DFB.SAFE"
+    current_time = str(time.time())
+    output_folder = "output"
+    graph_xml =os.path.join(graph_xml_path,"preprocessinggraph.xml" )
+    input_safe = os.path.join(base_path,safe_folder_path)
+    output_dir = os.path.join(base_path, output_folder, current_time)
+    os.makedirs(output_dir, exist_ok=True)
+    output_file = os.path.join(output_dir, "output_file.tif")
 
     run_snap_graph(graph_xml, input_safe, output_file)

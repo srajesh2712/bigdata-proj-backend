@@ -1,32 +1,34 @@
 import rasterio
+import rasterio
 import numpy as np
 import matplotlib.pyplot as plt
-
-
 print(rasterio.__version__)
 
 
-# Load the GeoTIFF
-with rasterio.open('E:\\Big Data\\Summer Project\\Assam-June5-2025\\Flood-June5-2025\\20240605\\output\\1750044647.7367983\\output_file.tif') as src:
-    backscatter = src.read(1)
-    profile = src.profile
+file_1  = 'export1.tif'
+file_2 = 'S1A_IW_GRDH_1SDV_20230805T114911_20230805T114936_049740_05FB26_334C_Cal_Spk_TC.tif'
+tif_path = f'E:/Big Data/Summer Project/AssamFlood2023/{file_1}'
 
-# Basic visualization
-plt.imshow(backscatter, cmap='gray', vmin=-25, vmax=0)
-plt.title('Sigma0_VV Backscatter')
-plt.colorbar(label='dB')
-plt.show()
 
-# Threshold-based flood mask
-threshold = -17  # You can tweak this!
-flood_mask = backscatter < threshold
+with rasterio.open(tif_path) as src:
+    print("Width:", src.width)
+    print("Height:", src.height)
+    print("CRS:", src.crs)
+    print("Transform:", src.transform)
 
-# Visualize mask
-plt.imshow(flood_mask, cmap='Blues')
-plt.title('Detected Flood Areas')
-plt.show()
+    # Read a small window from top-left (adjust coordinates if needed)
+    window = rasterio.windows.Window(100, 100, 1510, 1512)
+    backscatter = src.read(1, window=window)
+    if np.any(np.isnan(backscatter)):
+        print("Warning: NaN values found in backscatter window!")
 
-# Optional: Save flood mask as GeoTIFF
-profile.update(dtype=rasterio.uint8, count=1)
-with rasterio.open('flood_mask.tif', 'w', **profile) as dst:
-    dst.write(flood_mask.astype(rasterio.uint8), 1)
+
+    backscatter_db = 10 * np.log10(np.clip(backscatter, 1e-6, None))
+
+    print("Backscatter min/max:", np.min(backscatter), np.max(backscatter))
+
+    # Normalize for better visualization
+    plt.imshow(backscatter_db, cmap='Blues_r', vmin=-25, vmax=0)  # Adjust if needed
+    plt.colorbar(label='Backscatter (dB)')
+    plt.title("VV Backscatter (subset)")
+    plt.show()

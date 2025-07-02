@@ -47,48 +47,37 @@ def extract_features(window):
         vv_diff = vv_post - vv_pre
 
         # New features
-        vv_pre_std = np.std(vv_pre[mask])
-        vv_post_std = np.std(vv_post[mask])
-        vv_diff_std = np.std(vv_diff[mask])
-
-        vv_pre_var = np.var(vv_pre[mask])
-        vv_post_var = np.var(vv_post[mask])
-        vv_diff_var = np.var(vv_diff[mask])
+        global_stats = [
+        np.std(vv_pre), np.var(vv_pre),
+        np.std(vv_post), np.var(vv_post),
+        np.std(vv_diff), np.var(vv_diff)
+        ]
         # Prepare empty list to hold feature vectors
         features = []
         labels = []
+        X = []
+        y = []
 
         # Iterate through valid pixels only (excluding the 1-pixel pad)
-        for i in range(1, vv_pre.shape[0] - 1):
-            for j in range(1, vv_pre.shape[1] - 1):
-                if flood_mask[i, j] == -9999:
-                    continue
-
-                # Extract 3×3 neighborhood for each layer
-                patch_pre = vv_pre[i - 1:i + 2, j - 1:j + 2].flatten()
-                patch_post = vv_post[i - 1:i + 2, j - 1:j + 2].flatten()
-                patch_diff = vv_diff[i - 1:i + 2, j - 1:j + 2].flatten()
-
-                # Concatenate all 3×3 values (27 features)
-                patch_features = np.concatenate([patch_pre, patch_post, patch_diff])
-
-                # Add global (tile-wide) statistical features
-                patch_features = np.concatenate([
-                    patch_features,
-                    [vv_pre_std, vv_post_std, vv_diff_std],
-                    [vv_pre_var, vv_post_var, vv_diff_var]
-                ])
-
-                features.append(patch_features)
-                labels.append(flood_mask[i, j])
+        for i in range(vv_pre.shape[0]):
+            for j in range(vv_pre.shape[1]):
+                pixel_features = [
+                           vv_pre[i, j],
+                           vv_post[i, j],
+                           vv_diff[i, j]
+                       ] + global_stats
+                if mask[i, j]:
+                   X.append(pixel_features)
+                   y.append(flood_mask[i, j])
 
 
-
-        return np.array(features), np.array(labels)
+    return np.array(X), np.array(y)
 
 X_all, y_all = [], []
 for window in sample_windows:
     X, y = extract_features(window)
+    print(f"✅ Features extracted from window at ({window.col_off}, {window.row_off})")
+
     if X is not None:
         X_all.append(X)
         y_all.append(y)

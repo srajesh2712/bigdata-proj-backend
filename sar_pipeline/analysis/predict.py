@@ -5,10 +5,12 @@ from joblib import load
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 # Paths
-vv_pre_path = 'E:\\Big Data\\Summer Project\\Assam-Flood-June5-2024\\Preflood-May24-2024\\20240524\\subset_3_of_S1A_IW_GRDH_1SDV_20240524T115717_20240524T115742_054013_069101_5DC9_Orb_Cal_Spk_TC.tif'
-vv_post_path  = 'E:\\Big Data\\Summer Project\\Assam-Flood-June5-2024\\Flood-June5-2024\\20240605\\subset_0_of_S1A_IW_GRDH_1SDV_20240605T115717_20240605T115742_054188_06970B_2DFB_Orb_Cal_Spk_TC.tif'
+vv_pre_path ='E:\\Big Data\\Summer Project\\Assam-Flood-June2-2025\\20250521\\subset_0_of_S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D_Orb_Cal_Spk_TC.tif'
+vv_post_path='E:\\Big Data\\Summer Project\\Assam-Flood-June2-2025\\20250602\\subset_0_of_S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58_Orb_Cal_Spk_TC.tif'
+#vv_pre_path = 'E:\\Big Data\\Summer Project\\Assam-Flood-June5-2024\\Preflood-May24-2024\\20240524\\subset_3_of_S1A_IW_GRDH_1SDV_20240524T115717_20240524T115742_054013_069101_5DC9_Orb_Cal_Spk_TC.tif'
+#vv_post_path  = 'E:\\Big Data\\Summer Project\\Assam-Flood-June5-2024\\Flood-June5-2024\\20240605\\subset_0_of_S1A_IW_GRDH_1SDV_20240605T115717_20240605T115742_054188_06970B_2DFB_Orb_Cal_Spk_TC.tif'
 model_path = 'rf_checkpoint.joblib'
-output_path = 'predicted_flood.tif'
+output_path = 'predicted_flood_assam_june_2025.tif'
 
 
 
@@ -45,41 +47,35 @@ def predict_full_image(tile_size=512):
 
                     vv_pre = vv_pre_src.read(1, window=window)
                     vv_post = vv_post_src.read(1, window=window)
-                    print("Min:", np.min(vv_pre), "Max:", np.max(vv_pre), "Mean:", np.mean(vv_pre))
-                    if vv_pre.size == 0 or vv_post.size == 0:
-                        continue
+                    #print("Min:", np.min(vv_pre), "Max:", np.max(vv_pre), "Mean:", np.mean(vv_pre))
 
                     vv_diff = vv_post - vv_pre
-                    print(vv_post,vv_pre)
-                    vv_pre_p = np.pad(vv_pre, 1, mode='reflect')
-                    vv_post_p = np.pad(vv_post, 1, mode='reflect')
-                    vv_diff_p = np.pad(vv_diff, 1, mode='reflect')
+                    global_stats = [
+                            np.std(vv_pre), np.var(vv_pre),
+                            np.std(vv_post), np.var(vv_post),
+                            np.std(vv_diff), np.var(vv_diff)
+                            ]
+
 
                     features = []
+                    labels = []
+                    X = []
+                    y = []
                     positions = []
-                    std_pre, std_post, std_diff = np.std(vv_pre), np.std(vv_post), np.std(vv_diff)
-                    var_pre, var_post, var_diff = np.var(vv_pre), np.var(vv_post), np.var(vv_diff)
-                    height, width = vv_pre.shape
-                    for i in range(1, height - 1):
-                        for j in range(1, width - 1):
-                            patch_pre = vv_pre_p[i - 1:i + 2, j - 1:j + 2].flatten()
-                            patch_post = vv_post_p[i - 1:i + 2, j - 1:j + 2].flatten()
-                            patch_diff = vv_diff_p[i - 1:i + 2, j - 1:j + 2].flatten()
-
-                            patch_features = np.concatenate([
-                                patch_pre, patch_post, patch_diff,
-                                [std_pre, std_post, std_diff],
-                                [var_pre, var_post, var_diff]
-                            ])
-
-                            if vv_diff[i, j] < -3:
-                                features.append(patch_features)
-                                positions.append((i, j))
+                    for i in tqdm(range(vv_pre.shape[0]), desc="  ↳ Pixels", leave=False):
+                                for j in range(vv_pre.shape[1]):
+                                    pixel_features = [
+                                               vv_pre[i, j],
+                                               vv_post[i, j],
+                                               vv_diff[i, j]
+                                           ] + global_stats
+                                    X.append(pixel_features)
+                                    positions.append((i, j))
 
                     pred_img = np.zeros(vv_pre.shape, dtype=np.uint8)
 
-                    if features:
-                        X = np.array(features)  # ✔️ no reshape
+                    if X:
+                        X = np.array(X)
                         pred = clf.predict(X)
                         for (i, j), val in zip(positions, pred):
                             pred_img[i, j] = val
@@ -114,11 +110,11 @@ def visualize_tiff(filepath):
 
     # Display
     plt.figure(figsize=(10, 8))
-    plt.imshow(flood, cmap="gray")
+    plt.imshow(flood, cmap="Blues")
     plt.title("Predicted Flood Mask")
     plt.axis('off')
     plt.colorbar(label="Class")
     plt.show()
 # Run prediction
 predict_full_image()
-#visualize_tiff(output_path)
+visualize_tiff(output_path)

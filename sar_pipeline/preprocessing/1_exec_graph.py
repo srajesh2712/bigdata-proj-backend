@@ -1,8 +1,12 @@
 import subprocess
 import os
 import time
-
+import sys
 import xml.etree.ElementTree as ET
+
+from sar_pipeline.db import connect_db, insert_start_time, update_end_time
+
+
 def update_snap_graph(
     xml_path,
     new_input_safe_path,
@@ -74,34 +78,64 @@ def run_snap_graph(graph_path, input_file, output_file):
     print(f"\n▶️ Running SNAP GPT with command:\n{' '.join(command)}\n")
 
     try:
-        subprocess.run(command, check=True)
-        print(f"\n✅ Processing completed. Output saved at: {output_file}")
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+
+        while True:
+            char = process.stdout.read(1)
+            if not char:
+                break
+            sys.stdout.write(char)
+            sys.stdout.flush()
+        process.wait()
+        if process.returncode == 0:
+            print(f"\n✅ Processing completed. Output saved at: {output_file}")
+        else:
+            print(f"\n❌ SNAP GPT exited with code {process.returncode}")
     except subprocess.CalledProcessError as e:
         print("\n❌ Error during SNAP processing:")
         print(e)
+        print("STDOUT:\n", e.stdout)
+        print("STDERR:\n", e.stderr)
 
 
 if __name__ == "__main__":
-    base_path = "E:\\Big Data\\Summer Project\\Assam-Flood-June5-2024\\Flood-June5-2024\\20240605"
-    graph_xml_path = "E:\Big Data\Summer Project"
-    safe_folder_path = "S1A_IW_GRDH_1SDV_20240605T115717_20240605T115742_054188_06970B_2DFB.SAFE"
-    current_time = str(time.time())
-    output_folder = "output"
-    graph_xml =os.path.join(graph_xml_path,"myGraph.xml" )
-    input_safe = os.path.join(base_path,safe_folder_path)
-    output_dir = os.path.join(base_path, output_folder, current_time)
-    os.makedirs(output_dir, exist_ok=True)
-    output_file = os.path.join(output_dir, "output_file.tif")
+    conn = connect_db()
+    log_id, start = insert_start_time(conn)
+    conn.close()
+    print(f"Started at {start}, log ID: {log_id}")
+    try:
+        base_path = "/home/btcchl0040/Documents/SAR_Data/"
+        graph_xml_path = "/home/btcchl0040/Documents/SAR_Data"
+        safe_folder_path = "S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE"
+        current_time = str(time.time())
+        output_folder = "output"
+        graph_xml =os.path.join(graph_xml_path,"preprocessinggraph.xml" )
+        input_safe = os.path.join(base_path,safe_folder_path)
+        output_dir = os.path.join(base_path, output_folder, current_time)
+        os.makedirs(output_dir, exist_ok=True)
+        output_file = os.path.join(output_dir, "output_file.tif")
 
-    graph_xml = update_snap_graph(
-        xml_path=graph_xml,
-        new_input_safe_path="E:/Big Data/Summer Project/Assam-Flood-June5-2024/Flood-June5-2024/20240605/S1A_IW_GRDH_1SDV_20240605T115717_20240605T115742_054188_06970B_2DFB.SAFE",
-        new_pixel_region="9,0,25846,16734",
-        new_subset_region="17226,5220,25855,16735",
-        new_band_names="Amplitude_VH,Intensity_VH,Amplitude_VV,Intensity_VV",
-        new_output_tiff_path="E:/Big Data/Summer Project/Assam-Flood-June5-2024/Flood-June5-2024/20240605/scene_TC.tif",
-        output_path="updated_graph.xml"
-    )
+        graph_xml = update_snap_graph(
+            xml_path=graph_xml,
+            new_input_safe_path=input_safe,
+            new_pixel_region="9,0,25846,16734",
+            new_subset_region="17226,5220,25855,16735",
+            new_band_names="Amplitude_VH,Intensity_VH,Amplitude_VV,Intensity_VV",
+            new_output_tiff_path=output_file,
+            output_path="updated_graph.xml"
+        )
+        run_snap_graph(graph_xml, input_safe, output_file)
+    finally:
+        conn = connect_db()
+        end = update_end_time(conn, log_id)
+        print(f"Ended at {end}")
+        conn.close()
 
 
-    run_snap_graph(graph_xml, input_safe, output_file)
+

@@ -3,9 +3,17 @@ import os
 import time
 import sys
 import xml.etree.ElementTree as ET
-
+from sqlalchemy import create_engine
 from sar_pipeline.db import connect_db, insert_start_time, update_end_time
+from sqlalchemy.orm import sessionmaker
 
+from sar_pipeline.schema.schema import SafeFile, Base
+from dotenv import load_dotenv
+load_dotenv()
+engine = create_engine("postgresql+psycopg2://rajesh:rajesh@localhost/eo")
+Base.metadata.create_all(bind=engine)
+Session = sessionmaker(bind=engine)
+session = Session()
 
 def update_snap_graph(
     xml_path,
@@ -110,27 +118,30 @@ if __name__ == "__main__":
     conn.close()
     print(f"Started at {start}, log ID: {log_id}")
     try:
-        base_path = "/home/btcchl0040/Documents/SAR_Data/"
-        graph_xml_path = "/home/btcchl0040/Documents/SAR_Data"
-        safe_folder_path = "S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE"
-        current_time = str(time.time())
-        output_folder = "output"
-        graph_xml =os.path.join(graph_xml_path,"preprocessinggraph.xml" )
-        input_safe = os.path.join(base_path,safe_folder_path)
-        output_dir = os.path.join(base_path, output_folder, current_time)
-        os.makedirs(output_dir, exist_ok=True)
-        output_file = os.path.join(output_dir, "output_file.tif")
 
-        graph_xml = update_snap_graph(
-            xml_path=graph_xml,
-            new_input_safe_path=input_safe,
-            new_pixel_region="9,0,25846,16734",
-            new_subset_region="17226,5220,25855,16735",
-            new_band_names="Amplitude_VH,Intensity_VH,Amplitude_VV,Intensity_VV",
-            new_output_tiff_path=output_file,
-            output_path="updated_graph.xml"
-        )
-        run_snap_graph(graph_xml, input_safe, output_file)
+        pending_files = session.query(SafeFile).filter_by(active=True, status='pending').all()
+        for file in pending_files:
+            print(file.folder_path)
+            base_path =os.getenv('BASE_PATH')# "/home/btcchl0040/Documents/SAR_Data/"
+            graph_xml_path = os.getenv('GRAPH_XML_PATH')#"/home/btcchl0040/Documents/SAR_Data"
+            safe_folder_path =file.folder_path# "S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE"
+            current_time = str(time.time())
+            graph_xml =os.path.join(graph_xml_path,os.getenv('GRAPH_FILE_NAME') )#"preprocessinggraph.xml" )
+            input_safe = os.path.join(base_path,os.getenv('INPUT_FOLDER_NAME'),safe_folder_path)
+            output_dir = os.path.join(base_path, os.getenv('OUTPUT_FOLDER_NAME'), file.folder_path)
+            os.makedirs(output_dir, exist_ok=True)
+            output_file = os.path.join(output_dir, f"{file.folder_path}.tif")
+
+            graph_xml = update_snap_graph(
+                xml_path=graph_xml,
+                new_input_safe_path=input_safe,
+                new_pixel_region="9,0,25846,16734",
+                new_subset_region="17226,5220,25855,16735",
+                new_band_names="Amplitude_VH,Intensity_VH,Amplitude_VV,Intensity_VV",
+                new_output_tiff_path=output_file,
+                output_path="updated_graph.xml"
+            )
+            run_snap_graph(graph_xml, input_safe, output_file)
     finally:
         conn = connect_db()
         end = update_end_time(conn, log_id)

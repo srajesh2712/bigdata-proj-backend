@@ -1,0 +1,3 @@
+sar_pipeline/analysis/*.geojson
+sar_pipeline/analysis/*.joblib
+sar_pipeline/analysis/*.joblib

@@ -1,3 +1,4 @@
+from datetime import datetime
 import subprocess
 import os
 import time
@@ -22,7 +23,7 @@ def update_snap_graph(
     new_subset_region,       # e.g., "17226,5220,25855,16735"
     new_band_names,          # e.g., "Amplitude_VH,Intensity_VH"
     new_output_tiff_path,
-    output_path="modified_graph.xml"
+    output_path
 ):
     # Load the XML
     tree = ET.parse(xml_path)
@@ -122,15 +123,17 @@ if __name__ == "__main__":
         pending_files = session.query(SafeFile).filter_by(active=True, status='pending').all()
         for file in pending_files:
             print(file.folder_path)
-            base_path =os.getenv('BASE_PATH')# "/home/btcchl0040/Documents/SAR_Data/"
-            graph_xml_path = os.getenv('GRAPH_XML_PATH')#"/home/btcchl0040/Documents/SAR_Data"
-            safe_folder_path =file.folder_path# "S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE"
             current_time = str(time.time())
+            base_path =os.getenv('BASE_PATH')# "/home/btcchl0040/Documents/SAR_Data/"
+            graph_xml_path = os.getenv('TEMPLATE_PATH')#"/home/btcchl0040/Documents/SAR_Data"
+            safe_folder_path =file.folder_path# "S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE"
+
             graph_xml =os.path.join(graph_xml_path,os.getenv('GRAPH_FILE_NAME') )#"preprocessinggraph.xml" )
             input_safe = os.path.join(base_path,os.getenv('INPUT_FOLDER_NAME'),safe_folder_path)
             output_dir = os.path.join(base_path, os.getenv('OUTPUT_FOLDER_NAME'), file.folder_path)
             os.makedirs(output_dir, exist_ok=True)
-            output_file = os.path.join(output_dir, f"{file.folder_path}.tif")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = os.path.join(output_dir, f"{file.folder_path}_{timestamp}.tif")
 
             graph_xml = update_snap_graph(
                 xml_path=graph_xml,
@@ -139,7 +142,7 @@ if __name__ == "__main__":
                 new_subset_region="17226,5220,25855,16735",
                 new_band_names="Amplitude_VH,Intensity_VH,Amplitude_VV,Intensity_VV",
                 new_output_tiff_path=output_file,
-                output_path="updated_graph.xml"
+                output_path=os.path.join(os.getenv('BASE_PATH'),"modified_graph.xml")
             )
             run_snap_graph(graph_xml, input_safe, output_file)
     finally:

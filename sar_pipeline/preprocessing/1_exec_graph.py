@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 from sqlalchemy import create_engine
 from sar_pipeline.db import connect_db, insert_start_time, update_end_time
 from sqlalchemy.orm import sessionmaker
-
+from sar_pipeline.preprocessing.split_geotiff_files import split_files
 from sar_pipeline.schema.schema import SafeFile, Base
 from dotenv import load_dotenv
 load_dotenv()
@@ -145,6 +145,7 @@ if __name__ == "__main__":
                 output_path=os.path.join(os.getenv('BASE_PATH'),"modified_graph.xml")
             )
             run_snap_graph(graph_xml, input_safe, output_file)
+            split_files(output_file, output_dir)
     finally:
         conn = connect_db()
         end = update_end_time(conn, log_id)

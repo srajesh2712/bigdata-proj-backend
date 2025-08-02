@@ -1,10 +1,14 @@
 import rasterio
 import numpy as np
+from datetime import datetime
+import os
+from dotenv import load_dotenv
+load_dotenv()
 print(rasterio.__version__)
 from rasterio.windows import Window
 from matplotlib.colors import ListedColormap
-pre_flood_file = 'E:\\Big Data\\Summer Project\\Assam-Flood-June5-2024\\Preflood-May24-2024\\20240524\\subset_3_of_S1A_IW_GRDH_1SDV_20240524T115717_20240524T115742_054013_069101_5DC9_Orb_Cal_Spk_TC.tif'
-post_flood_file  = 'E:\\Big Data\\Summer Project\\Assam-Flood-June5-2024\\Flood-June5-2024\\20240605\\subset_0_of_S1A_IW_GRDH_1SDV_20240605T115717_20240605T115742_054188_06970B_2DFB_Orb_Cal_Spk_TC.tif'
+pre_flood_file = '/home/btcchl0040/Documents/SAR_Data/OUTPUT/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE_20250802_151438.tif'
+post_flood_file  = '/home/btcchl0040/Documents/SAR_Data/OUTPUT/S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE/S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE_20250802_151542.tif'
 
 
 
@@ -12,7 +16,11 @@ post_flood_file  = 'E:\\Big Data\\Summer Project\\Assam-Flood-June5-2024\\Flood-
 tile_size = 512
 
 # Output flood mask path
-output_path = "flood_mask.tif"
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+output_file =  f"{timestamp}.tif"
+print(os.getenv('BASE_PATH'))
+print(os.getenv('FLOOD_MASK'))
+output_path = os.path.join(os.getenv('BASE_PATH'),os.getenv('FLOOD_MASK'),f"{timestamp}.tif")
 
 # Open both pre- and post-flood TIFFs
 with rasterio.open(pre_flood_file) as src_pre, rasterio.open(post_flood_file) as src_post:
@@ -22,7 +30,7 @@ with rasterio.open(pre_flood_file) as src_pre, rasterio.open(post_flood_file) as
 
     width = src_post.width
     height = src_post.height
-
+    print(output_path)
     with rasterio.open(output_path, "w", **profile) as dst:
 
         for y in range(0, height, tile_size):
@@ -31,8 +39,8 @@ with rasterio.open(pre_flood_file) as src_pre, rasterio.open(post_flood_file) as
                 h = min(tile_size, height - y)
                 window = Window(x, y, w, h)
 
-                pre_tile = src_pre.read(2, window=window)
-                post_tile = src_post.read(2, window=window)
+                pre_tile = src_pre.read(1, window=window)
+                post_tile = src_post.read(1, window=window)
 
                 pre_dB = 10 * np.log10(np.clip(pre_tile, 1e-6, None))
                 post_dB = 10 * np.log10(np.clip(post_tile, 1e-6, None))
@@ -48,7 +56,8 @@ with rasterio.open(pre_flood_file) as src_pre, rasterio.open(post_flood_file) as
 import matplotlib.pyplot as plt
 import rasterio
 
-with rasterio.open("flood_mask.tif") as src:
+
+with rasterio.open(output_path) as src:
     mask = src.read(1)
 
 mask = (mask > 0).astype(np.uint8)  # 1 = flood, 0 = non-flood

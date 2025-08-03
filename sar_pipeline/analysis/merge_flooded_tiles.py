@@ -1,15 +1,12 @@
 import os
 from rasterio.merge import merge
-from datetime import datetime
 import rasterio
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import ListedColormap
+def merge_flooded_tiles(mask_path,output_path,threshold_percent=10):
 
-def merge_flooded_tiles(mask_path,output_path,job_id):
 
-    #mask_path = "/home/btcchl0040/Documents/SAR_Data/FLOOD_MASK/20250803_090142"
-    #output_path=f'/home/btcchl0040/Documents/SAR_Data/{job_id}/FLOOD_MASK/{timestamp}.tif'
-    threshold_percent = 10
     tile_infos = []
 
     for tile_file in sorted(os.listdir(mask_path)):
@@ -48,18 +45,19 @@ def merge_flooded_tiles(mask_path,output_path,job_id):
         "width": mosaic.shape[2],
         "transform": out_trans
     })
-
     with rasterio.open(output_path, "w", **out_meta) as dest:
         dest.write(mosaic)
 
+    open_merged_file(output_path)
+
+def open_merged_file(file_to_open):
 
 
-
-    with rasterio.open(output_path) as src:
+    with rasterio.open(file_to_open) as src:
         data = src.read(1)
 
     # Create a color map: 0 = black, 1 = red
-    from matplotlib.colors import ListedColormap
+
     cmap = ListedColormap(['white', 'blue'])
 
      # two discrete values

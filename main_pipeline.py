@@ -56,4 +56,4 @@ if __name__ == '__main__':
         job_id = '20250803_163826'
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f'/home/btcchl0040/Documents/SAR_Data/{job_id}/FLOOD_MASK/{timestamp}.tif'
-        merge_flooded_tiles(pre_folder,output_path,job_id)
+        merge_flooded_tiles(pre_folder,output_path,10)

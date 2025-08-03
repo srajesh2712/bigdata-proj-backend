@@ -1,6 +1,29 @@
 import rasterio
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+def has_flood_pixels(tif_path,threshold=0):
+    with rasterio.open(tif_path) as src:
+        data = src.read(1)  # First band
+        return np.any(data > threshold)
+
+
+def check_all_tiles(directory, extension=".tif"):
+    flooded_files = []
+    all_files = sorted([f for f in os.listdir(directory) if f.endswith(extension)])
+
+    for file in all_files:
+        full_path = os.path.join(directory, file)
+        if has_flood_pixels(full_path):
+            flooded_files.append(file)
+
+    print(f"\nFlooded files ({len(flooded_files)} found):")
+    for f in flooded_files:
+        print(f)
+
+    return flooded_files
+
+
 
 def visualize_tiff(tif_path):
     with rasterio.open(tif_path) as src:
@@ -31,4 +54,6 @@ def visualize_tiff(tif_path):
         plt.show()
 
 # Example usage
-visualize_tiff("/home/btcchl0040/Documents/SAR_Data/FLOOD_MASK/20250802_154907.tif")
+visualize_tiff("/home/btcchl0040/Documents/SAR_Data/FLOOD_MASK/20250802_182055.tif") #tile_8192_4096  tile_8192_6144 tile_8192_8192
+folder_path="/home/btcchl0040/Documents/SAR_Data/OUTPUT/S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE"
+#check_all_tiles(folder_path)

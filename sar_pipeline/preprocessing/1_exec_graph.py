@@ -114,9 +114,9 @@ def run_snap_graph(graph_path, input_file, output_file):
 
 
 if __name__ == "__main__":
-    conn = connect_db()
-    log_id, start = insert_start_time(conn)
-    conn.close()
+
+    log_id, start = insert_start_time('SAR_PREPROCESSING')
+
     print(f"Started at {start}, log ID: {log_id}")
     try:
 
@@ -147,10 +147,10 @@ if __name__ == "__main__":
             run_snap_graph(graph_xml, input_safe, output_file)
             split_files(output_file, output_dir)
     finally:
-        conn = connect_db()
-        end = update_end_time(conn, log_id)
+
+        end = update_end_time(log_id)
         print(f"Ended at {end}")
-        conn.close()
+
 
 
 

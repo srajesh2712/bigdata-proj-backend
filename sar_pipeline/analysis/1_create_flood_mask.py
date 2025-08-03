@@ -24,6 +24,7 @@ os.makedirs(output_folder, exist_ok=True)
 # Open both pre- and post-flood TIFFs
 flood_counts = []
 for tile_filename in sorted(os.listdir(pre_folder)):
+    log_id, start = insert_start_time('')
     print(f'Starting time{datetime.now().strftime("%Y%m%d_%H%M%S")}')
     if not tile_filename.endswith(".tif"):
         continue

@@ -13,3 +13,4 @@ class SafeFile(Base):
     active = Column(Boolean, default=True)
     inserted_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    action = Column(String)

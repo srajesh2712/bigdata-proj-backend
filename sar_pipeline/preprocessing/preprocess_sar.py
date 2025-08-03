@@ -131,7 +131,7 @@ def preprocess_sar_files(job_id,pending_files):
             input_safe = os.path.join(base_path,os.getenv('INPUT_FOLDER_NAME'),safe_folder_path)
             output_dir = os.path.join(base_path, job_id,os.getenv('PREPROCESSING_FOLDER_NAME'), file.folder_path)
             os.makedirs(output_dir, exist_ok=True)
-           
+
             output_file = os.path.join(output_dir, f"{file.folder_path}_{job_id}.tif")
 
             graph_xml = update_snap_graph(

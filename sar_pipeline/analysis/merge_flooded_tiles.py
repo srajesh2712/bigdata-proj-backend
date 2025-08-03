@@ -16,8 +16,8 @@ def merge_flooded_tiles(mask_path,output_path,threshold_percent=10):
             total_pixels = data.size
             flooded_pixels = np.sum(data == 1)
             flooded_percent = (flooded_pixels / total_pixels) * 100
-            print(flooded_percent)
-            if flooded_percent > threshold_percent:
+
+            if flooded_percent >= threshold_percent:
                 tile_infos.append({
                     "path": tile_path,
                     "flooded_pixels": flooded_pixels,
@@ -58,11 +58,11 @@ def open_merged_file(file_to_open):
 
     # Create a color map: 0 = black, 1 = red
 
-    cmap = ListedColormap(['white', 'pink'])
+    cmap = ListedColormap(['white', 'blue'])
 
      # two discrete values
     cmap.set_under('black')  # anything <1 is black
-    cmap.set_over('Green')     # anything >1 is red (optional)
+    cmap.set_over('blue')     # anything >1 is red (optional)
 
     # Plot
     plt.figure(figsize=(10, 10))

@@ -1,6 +1,6 @@
 import random
 
-from sar_pipeline.analysis.create_flood_mask import create_flood_mask
+from sar_pipeline.analysis.create_flood_mask import create_flood_mask,create_mask
 from sar_pipeline.analysis.merge_flooded_tiles import merge_flooded_tiles
 from sar_pipeline.preprocessing.preprocess_sar import preprocess_sar_files
 from sar_pipeline.preprocessing.split_geotiff_files import split_files
@@ -17,7 +17,7 @@ def fetch_processing_files():
     pending_files = session.query(SafeFile).filter_by(active=True, status='pending').all()
     return pending_files
 if __name__ == '__main__':
-    message = 'step4'
+    message = 'step5'
 
     if message == 'step1':
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -56,4 +56,10 @@ if __name__ == '__main__':
         job_id = '20250803_163826'
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f'/home/btcchl0040/Documents/SAR_Data/{job_id}/FLOOD_MASK/{timestamp}.tif'
-        merge_flooded_tiles(pre_folder,output_path,10)
+        merge_flooded_tiles(pre_folder,output_path,0)
+    elif message == 'step5':
+        pre_tile_path = '/home/btcchl0040/Documents/SAR_Data/20250803_163826/PREPROCESSING/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE_20250803_163826.tif'
+        post_tile_path = '/home/btcchl0040/Documents/SAR_Data/20250803_163826/PREPROCESSING/S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE/S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE_20250803_163826.tif'
+        output_tif_path = '/home/btcchl0040/Documents/SAR_Data/flood_mask.tif'
+        output_png_path = '/home/btcchl0040/Documents/SAR_Data/flood_mask.png'
+        create_mask(pre_tile_path, post_tile_path, output_tif_path,output_png_path)

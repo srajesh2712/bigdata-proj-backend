@@ -58,11 +58,11 @@ def open_merged_file(file_to_open):
 
     # Create a color map: 0 = black, 1 = red
 
-    cmap = ListedColormap(['white', 'blue'])
+    cmap = ListedColormap(['white', 'pink'])
 
      # two discrete values
     cmap.set_under('black')  # anything <1 is black
-    cmap.set_over('blue')     # anything >1 is red (optional)
+    cmap.set_over('Green')     # anything >1 is red (optional)
 
     # Plot
     plt.figure(figsize=(10, 10))

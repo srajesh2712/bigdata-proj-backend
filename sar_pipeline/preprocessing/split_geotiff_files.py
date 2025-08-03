@@ -1,9 +1,13 @@
 import rasterio
 from rasterio.windows import Window
 import os
+from datetime import datetime
+from sar_pipeline.db import insert_start_time, update_end_time
+
 
 def split_files(input_tif,output_dir):
-
+    log_id, start = insert_start_time('SPLIT_GEOTIFF_FILES')
+    print(f"Started at {start}")
     tile_size = 2048  # pixels
 
     os.makedirs(output_dir, exist_ok=True)
@@ -26,12 +30,11 @@ def split_files(input_tif,output_dir):
                 tile_filename = f"{output_dir}/tile_{j}_{i}.tif"
                 with rasterio.open(tile_filename, "w", **out_profile) as dest:
                     dest.write(src.read(window=window))
-
+    end = update_end_time(log_id)
+    print(f"Ended at {end}")
 if __name__ == '__main__':
-    input_tif = '/home/btcchl0040/Documents/SAR_Data/OUTPUT/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE_20250801_170133.tif'
-    output_dir ='/home/btcchl0040/Documents/SAR_Data/OUTPUT/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE/split/'
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_dir = '/home/btcchl0040/Documents/SAR_Data/OUTPUT/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE/'
+    input_tif = '/home/btcchl0040/Documents/SAR_Data/OUTPUT/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE_20250802_151438.tif'
+    output_dir =os.path.join(base_dir,f'split/{timestamp}')
     split_files(input_tif,output_dir)
-
-    with rasterio.open(input_tif) as src:
-        print(src.crs)  # Coordinate reference system
-        print(src.bounds)  # Geospatial bounds

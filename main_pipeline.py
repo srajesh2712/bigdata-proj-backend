@@ -1,6 +1,7 @@
 import random
 
 from sar_pipeline.analysis.create_flood_mask import create_flood_mask
+from sar_pipeline.analysis.merge_flooded_tiles import merge_flooded_tiles
 from sar_pipeline.preprocessing.preprocess_sar import preprocess_sar_files
 from sar_pipeline.preprocessing.split_geotiff_files import split_files
 from sqlalchemy import create_engine
@@ -16,7 +17,7 @@ def fetch_processing_files():
     pending_files = session.query(SafeFile).filter_by(active=True, status='pending').all()
     return pending_files
 if __name__ == '__main__':
-    message = 'step3'
+    message = 'step4'
 
     if message == 'step1':
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -50,3 +51,9 @@ if __name__ == '__main__':
         post_folder = '/home/btcchl0040/Documents/SAR_Data/20250803_163826/PREPROCESSING/S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE/SPLIT'
         job_id = '20250803_163826'
         create_flood_mask(pre_folder,post_folder,job_id)
+    elif message == 'step4':
+        pre_folder = '/home/btcchl0040/Documents/SAR_Data/20250803_163826/FLOOD_MASK'
+        job_id = '20250803_163826'
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = f'/home/btcchl0040/Documents/SAR_Data/{job_id}/FLOOD_MASK/{timestamp}.tif'
+        merge_flooded_tiles(pre_folder,output_path,job_id)

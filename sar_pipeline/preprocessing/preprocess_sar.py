@@ -113,8 +113,7 @@ def run_snap_graph(graph_path, input_file, output_file):
         print("STDERR:\n", e.stderr)
 
 
-if __name__ == "__main__":
-
+def preprocess_sar_files(job_id):
     log_id, start = insert_start_time('SAR_PREPROCESSING')
 
     print(f"Started at {start}, log ID: {log_id}")
@@ -130,10 +129,10 @@ if __name__ == "__main__":
 
             graph_xml =os.path.join(graph_xml_path,os.getenv('GRAPH_FILE_NAME') )#"preprocessinggraph.xml" )
             input_safe = os.path.join(base_path,os.getenv('INPUT_FOLDER_NAME'),safe_folder_path)
-            output_dir = os.path.join(base_path, os.getenv('OUTPUT_FOLDER_NAME'), file.folder_path)
+            output_dir = os.path.join(base_path, job_id,os.getenv('PREPROCESSING_FOLDER_NAME'), file.folder_path)
             os.makedirs(output_dir, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_file = os.path.join(output_dir, f"{file.folder_path}_{timestamp}.tif")
+            #timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = os.path.join(output_dir, f"{file.folder_path}_{job_id}.tif")
 
             graph_xml = update_snap_graph(
                 xml_path=graph_xml,
@@ -145,7 +144,7 @@ if __name__ == "__main__":
                 output_path=os.path.join(os.getenv('BASE_PATH'),"modified_graph.xml")
             )
             run_snap_graph(graph_xml, input_safe, output_file)
-            split_files(output_file, output_dir)
+
     finally:
 
         end = update_end_time(log_id)

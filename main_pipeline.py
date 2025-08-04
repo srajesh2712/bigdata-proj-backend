@@ -17,7 +17,7 @@ def fetch_processing_files():
     pending_files = session.query(SafeFile).filter_by(active=True, status='pending').all()
     return pending_files
 if __name__ == '__main__':
-    message = 'step5'
+    message = 'step3'
 
     if message == 'step1':
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -75,7 +75,8 @@ def create_flood_mask(pre_folder,post_folder,job_id):
 
         output_tif_path = os.path.join(output_folder, f"{tile_filename.replace('.tif', '')}_mask.tif")
         output_png_path = output_tif_path.replace(".tif", ".png")
-        output_tif_path, total_flood_pixels = create_mask(pre_tile_path,post_tile_path, output_tif_path)
+        print(output_tif_path, output_png_path)
+        output_tif_path, total_flood_pixels = create_mask(pre_tile_path,post_tile_path, output_tif_path,output_png_path)
         flood_counts.append((output_tif_path, total_flood_pixels))
 
 

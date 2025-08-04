@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
+
 from sqlalchemy.sql import func
+from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
@@ -14,3 +15,14 @@ class SafeFile(Base):
     inserted_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     action = Column(String)
+
+class Jobs(Base):
+    __tablename__ = 'Jobs'
+
+    id = Column(Integer, primary_key=True)
+    status = Column(String, default='pending')  # 'pending', 'processing', 'done', 'error'
+    active = Column(Boolean, default=True)
+    inserted_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    action = Column(String)
+

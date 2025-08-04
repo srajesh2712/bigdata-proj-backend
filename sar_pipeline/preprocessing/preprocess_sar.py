@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 from sqlalchemy import create_engine
 from sar_pipeline.db import connect_db, insert_start_time, update_end_time
 from sqlalchemy.orm import sessionmaker
-from sar_pipeline.preprocessing.split_geotiff_files import split_files
+
 from sar_pipeline.schema.schema import SafeFile, Base
 from dotenv import load_dotenv
 load_dotenv()
@@ -113,14 +113,13 @@ def run_snap_graph(graph_path, input_file, output_file):
         print("STDERR:\n", e.stderr)
 
 
-if __name__ == "__main__":
-
+def preprocess_sar_files(job_id,pending_files):
     log_id, start = insert_start_time('SAR_PREPROCESSING')
 
     print(f"Started at {start}, log ID: {log_id}")
     try:
 
-        pending_files = session.query(SafeFile).filter_by(active=True, status='pending').all()
+
         for file in pending_files:
             print(file.folder_path)
             current_time = str(time.time())
@@ -130,10 +129,10 @@ if __name__ == "__main__":
 
             graph_xml =os.path.join(graph_xml_path,os.getenv('GRAPH_FILE_NAME') )#"preprocessinggraph.xml" )
             input_safe = os.path.join(base_path,os.getenv('INPUT_FOLDER_NAME'),safe_folder_path)
-            output_dir = os.path.join(base_path, os.getenv('OUTPUT_FOLDER_NAME'), file.folder_path)
+            output_dir = os.path.join(base_path, job_id,os.getenv('PREPROCESSING_FOLDER_NAME'), file.folder_path)
             os.makedirs(output_dir, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_file = os.path.join(output_dir, f"{file.folder_path}_{timestamp}.tif")
+
+            output_file = os.path.join(output_dir, f"{file.folder_path}_{job_id}.tif")
 
             graph_xml = update_snap_graph(
                 xml_path=graph_xml,
@@ -145,7 +144,7 @@ if __name__ == "__main__":
                 output_path=os.path.join(os.getenv('BASE_PATH'),"modified_graph.xml")
             )
             run_snap_graph(graph_xml, input_safe, output_file)
-            split_files(output_file, output_dir)
+
     finally:
 
         end = update_end_time(log_id)

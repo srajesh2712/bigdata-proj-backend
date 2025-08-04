@@ -12,7 +12,7 @@ flooded_proj = flooded.to_crs(epsg=32646)
 
 # Apply buffer (e.g., 10 meters to merge nearby polygons)
 flooded_buffered = flooded_proj.buffer(10)
-  
+      
 # Merge all geometries
 merged_geom = flooded_buffered.union_all()
 

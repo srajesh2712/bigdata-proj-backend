@@ -5,7 +5,7 @@ import geopandas as gpd
 
 flood_polygons = []
 
-with rasterio.open("predicted_flood_June2024.tif") as src:
+with rasterio.open("../assets/predicted_flood_June2024.tif") as src:
     mask = src.read(1)
     transform = src.transform
     crs = src.crs

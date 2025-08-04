@@ -150,7 +150,7 @@ X_train, X_test, y_train, y_test = train_test_split(X_balanced, y_balanced, test
 # Parameters
 chunk_size = 10
 total_trees = 300
-model_path = 'rf_checkpoint_1.joblib'
+model_path = '../assets/rf_checkpoint_1.joblib'
 
 
 # Get total number of CPU cores
@@ -177,7 +177,7 @@ y_pred = clf.predict(X_test)
 print(classification_report(y_test, y_pred))
 
 # Optional: save final version as separate file
-dump(clf, 'rf_model_final1.joblib')
+dump(clf, '../assets/rf_model_final1.joblib')
 
 y_pred = clf.predict(X_test)
 print(classification_report(y_test, y_pred))

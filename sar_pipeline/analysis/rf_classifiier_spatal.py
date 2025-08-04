@@ -115,7 +115,7 @@ X_train, X_test, y_train, y_test = train_test_split(X_balanced, y_balanced, test
 # Parameters
 chunk_size = 10
 total_trees = 300
-model_path = 'rf_checkpoint.joblib'
+model_path = '../assets/rf_checkpoint.joblib'
 
 # Step 1: Try to load existing checkpoint
 if os.path.exists(model_path):

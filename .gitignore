@@ -11,3 +11,4 @@ sar_pipeline/visualization/visualization_output.png
 *.tif* 
 sar_pipeline/visualization/*.html
 sar_pipeline/visualization/*.html
+sar_pipeline/visualization/*.html

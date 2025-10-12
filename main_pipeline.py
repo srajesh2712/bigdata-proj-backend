@@ -2,6 +2,7 @@ import random
 
 from sar_pipeline.analysis.create_flood_mask import create_flood_mask,create_mask
 from sar_pipeline.analysis.merge_flooded_tiles import merge_flooded_tiles
+from sar_pipeline.db import fetch_processing_files, update_processing_files_by_jobid
 from sar_pipeline.preprocessing.preprocess_sar import preprocess_sar_files
 from sar_pipeline.preprocessing.split_geotiff_files import split_files
 from sqlalchemy import create_engine
@@ -13,34 +14,29 @@ session = Session()
 from sar_pipeline.schema.schema import SafeFile, Base
 from datetime import datetime
 import os
-def fetch_processing_files():
-    pending_files = session.query(SafeFile).filter_by(active=True, status='pending').all()
-    return pending_files
+base_dir = '/home/btcchl0040/Documents/SAR_Data'
+
 if __name__ == '__main__':
     message = 'step3'
-
+    pending_files = fetch_processing_files()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    job_id = timestamp  # 'JOB_1'
+    print("Job ID: ", job_id)
     if message == 'step1':
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # split files
-        job_id=timestamp #'JOB_1'
-        print("Job ID: ", job_id)
 
-
-        pending_files = fetch_processing_files()
-        # step 1 - preprocess the sar file using graph xml and gpt command from snap
+        '''
+        step 1 - preprocess the sar file using graph xml and gpt command from snap
+        Series of steps have to be applied for preprocessing
+        fetching all the folder names which are not preprocessed and pre process the same 
+        '''
         preprocess_sar_files(job_id, pending_files)
+        update_processing_files_by_jobid(job_id)
     elif message == 'step2':
         # step 2 - split the preprocessed files into chunks
-
-        base_dir = '/home/btcchl0040/Documents/SAR_Data'
-
-
         for file in pending_files:
             folder_name = file.folder_path
             processed_geotiff= os.path.join(base_dir,f'{job_id}', 'PREPROCESSING',file , f'{file}_{job_id}.tif')
-
             print(f'processed_geotiff  {file}','\n')
-
             parent_folder = os.path.dirname(processed_geotiff)
             output_dir = os.path.join(parent_folder, 'SPLIT')
             print(' Tiles created at  ',output_dir,'\n')

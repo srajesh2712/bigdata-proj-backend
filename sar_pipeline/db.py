@@ -1,6 +1,9 @@
 import psycopg2
 from datetime import datetime
 
+from main_pipeline import session
+from sar_pipeline.schema.schema import SafeFile
+
 # Update these as per your local setup
 DB_PARAMS = {
     'dbname': 'eo',
@@ -31,4 +34,19 @@ def update_end_time(log_id):
         conn.commit()
         conn.close()
     return end_time
+
+def fetch_processing_files():
+    pending_files = session.query(SafeFile).filter_by(active=True, status='pending').all()
+    return pending_files
+
+
+def update_processing_files_by_jobid(job_id, new_status='in_progress'):
+    # Get all files with the given job_id
+    files_to_update = session.query(SafeFile).filter_by(job_id=job_id).all()
+
+    for file in files_to_update:
+        file.status = new_status  # e.g., 'in_progress', 'completed', 'failed'
+
+    session.commit()
+    print(f"Updated {len(files_to_update)} files to status '{new_status}' for job_id '{job_id}'")
 

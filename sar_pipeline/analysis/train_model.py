@@ -171,7 +171,7 @@ else:
     current_estimators = 0
 
 train_model_data(current_estimators,total_trees,X_train,y_train)
-  
+
 # Step 3: Evaluate
 y_pred = clf.predict(X_test)
 print(classification_report(y_test, y_pred))

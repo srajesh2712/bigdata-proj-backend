@@ -9,3 +9,5 @@ sar_pipeline/visualization/visualization_output.png
 .png
 *.png
 *.tif* 
+sar_pipeline/visualization/*.html
+

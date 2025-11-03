@@ -21,7 +21,14 @@ def create_mask(pre_tile_path,post_tile_path,output_tif_path,output_png_path):
     with rasterio.open(pre_tile_path) as src_pre, rasterio.open(post_tile_path) as src_post:
 
         profile = src_post.profile.copy()
-        profile.update(dtype=rasterio.uint8, count=1, compress='lzw')  # optimize output
+        #profile.update(dtype=rasterio.uint8, count=1, compress='lzw')  # optimize output
+        profile.update(
+            dtype=rasterio.float32,
+            count=1,
+            compress='lzw',
+            crs=src_post.crs,  # keep CRS consistent
+            transform=src_post.transform
+        )
 
         width, height = src_post.width, src_post.height
         total_flood_pixels = 0
@@ -43,14 +50,19 @@ def create_mask(pre_tile_path,post_tile_path,output_tif_path,output_png_path):
                     # print(pre_dB)
                     # Basic flood logic: drop in backscatter > 2 dB
                     diff_tile = post_dB - pre_dB
-                    mask_tile = (diff_tile < -5.5).astype(np.uint8)
-                    mask_full[y:y + h, x:x + w] = mask_tile
-                    flood_pixel_count = np.sum(mask_tile)
-                    total_flood_pixels += flood_pixel_count
+                    # commenting out as the log ration gives the value
+                    #mask_tile = (diff_tile < -5.5).astype(np.uint8)
+                    #mask_full[y:y + h, x:x + w] = mask_tile
+                    mask_full[y:y + h, x:x + w] = diff_tile
+                    #flood_pixel_count = np.sum(mask_tile)
+                    #total_flood_pixels += flood_pixel_count
                     # print(mask_tile)
-                    dst.write(mask_tile, 1, window=window)
+                    #dst.write(mask_tile, 1, window=window)
+                    dst.write(mask_full.astype(np.float32), 1)
 
-        plt.imsave(output_png_path, mask_full, cmap="Blues", vmin=0, vmax=1)
+        #plt.imsave(output_png_path, mask_full, cmap="Blues", vmin=0, vmax=1)
+        plt.imsave(output_png_path, mask_full, cmap="Blues", vmin=np.min(mask_full), vmax=np.max(mask_full))
+
     print(f'Ending time{datetime.now().strftime("%Y%m%d_%H%M%S")}')
     return output_tif_path, total_flood_pixels
 def create_flood_mask(pre_folder,post_folder,job_id):

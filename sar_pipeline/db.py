@@ -1,7 +1,7 @@
 import psycopg2
 from datetime import datetime
 
-from main_pipeline import session
+
 from sar_pipeline.schema.schema import SafeFile
 
 # Update these as per your local setup
@@ -35,12 +35,12 @@ def update_end_time(log_id):
         conn.close()
     return end_time
 
-def fetch_processing_files():
+def fetch_processing_files(session):
     pending_files = session.query(SafeFile).filter_by(active=True, status='pending').all()
     return pending_files
 
 
-def update_processing_files_by_jobid(job_id, new_status='in_progress'):
+def update_processing_files_by_jobid(session,job_id, new_status='in_progress'):
     # Get all files with the given job_id
     files_to_update = session.query(SafeFile).filter_by(job_id=job_id).all()
 

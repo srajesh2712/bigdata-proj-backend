@@ -17,8 +17,8 @@ import os
 base_dir = '/home/btcchl0040/Documents/SAR_Data'
 
 if __name__ == '__main__':
-    message = 'step3'
-    pending_files = fetch_processing_files()
+    message = 'step4'
+    pending_files = fetch_processing_files(session)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     job_id = timestamp  # 'JOB_1'
     print("Job ID: ", job_id)

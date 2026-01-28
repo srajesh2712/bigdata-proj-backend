@@ -72,7 +72,7 @@ def process_sar_tile(task_data):
         mask_hdfs_path = None
         if pixel_count > 0:
             local_tmp = f"/tmp/tile_{window_id}.tif"
-            mask_hdfs_path = f"/user/btcchl0040/sar/results/masks/tile_{window_id:02d}_mask.tif"
+            mask_hdfs_path = f"/user/btcchl0040/sar/results/otsu/masks/tile_{window_id:02d}_mask.tif"
 
             meta = {
                 "driver": "GTiff", "height": win.height, "width": win.width,

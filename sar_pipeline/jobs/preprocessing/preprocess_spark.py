@@ -8,8 +8,28 @@ from datetime import datetime
 
 # --- Keep all your existing functions exactly as they are ---
 
-def update_snap_graph(xml_path, new_input_safe_path, new_pixel_region, 
-                      new_subset_region, new_band_names, new_output_tiff_path, output_path):
+import fsspec
+import os
+
+def write_to_hdfs(local_file_path, hdfs_target_path):
+    """
+    Uploads a local file into HDFS using fsspec.
+    Example:
+        local_file_path = "/tmp/tile_Q1.tif"
+        hdfs_target_path = "/user/btcchl0040/dask_preprocessed/job123/tile_Q1.tif"
+    """
+    os.environ["HADOOP_USER_NAME"] = "root" 
+    fs = fsspec.filesystem("hdfs", host="namenode", port=8020,user="btcchl0040")
+
+    # Ensure HDFS directory exists
+    hdfs_dir = os.path.dirname(hdfs_target_path)
+    if not fs.exists(hdfs_dir):
+        fs.makedirs(hdfs_dir)
+
+    fs.put(local_file_path, hdfs_target_path)
+    return hdfs_target_path
+    
+def update_snap_graph(xml_path, new_input_safe_path, new_geo_region, new_band_names, new_output_tiff_path, output_path):
     tree = ET.parse(xml_path)
     root = tree.getroot()
 
@@ -23,10 +43,10 @@ def update_snap_graph(xml_path, new_input_safe_path, new_pixel_region,
 
     if (read_file := find_node_param("Read", "file")) is not None:
         read_file.text = new_input_safe_path
-    if (pixel_region := find_node_param("Read", "pixelRegion")) is not None:
-        pixel_region.text = new_pixel_region
-    if (subset_region := find_node_param("Subset", "region")) is not None:
-        subset_region.text = new_subset_region
+    #if (pixel_region := find_node_param("Read", "pixelRegion")) is not None:
+    #    pixel_region.text = new_pixel_region
+    if (subset_region := find_node_param("Subset", "geoRegion")) is not None:
+        subset_region.text = new_geo_region
     if (subset_bands := find_node_param("Subset", "sourceBands")) is not None:
         subset_bands.text = new_band_names
     if (write_file := find_node_param("Write", "file")) is not None:
@@ -42,7 +62,7 @@ def process_tile_worker(payload):
     base = '/opt/spark/data'
     input_file = payload['input_safe']
     output_tiff = payload['output_tiff']
-    worker_home = "/root"
+    worker_home = "/tmp"
     # 2. Print to STDOUT so you see it in the Worker Logs
     print(f"DEBUG: Worker starting tile {payload['tile_id']}")
     print(f"DEBUG: Input: {input_file}")
@@ -50,7 +70,12 @@ def process_tile_worker(payload):
     # Check if input exists
     if not os.path.exists(input_file):
         print(f"DEBUG: ERROR - Input file not found at {input_file}")
-        return {"status": "Failed", "error": "Input Missing"}
+        return {
+            "tile_id": payload.get('tile_id', 'Unknown'), # Add this
+            "status": "Failed", 
+            "code": 404,                                 # Add this
+            "msg": f"Input file not found: {input_file}"
+        }
 
     temp_graph = os.path.join("/tmp", f"graph_{payload['tile_id']}.xml")
     
@@ -58,8 +83,7 @@ def process_tile_worker(payload):
         update_snap_graph(
             xml_path=payload['template_xml'],
             new_input_safe_path=input_file,
-            new_pixel_region=payload['pixel_region'],
-            new_subset_region=payload['subset_region'],
+            new_geo_region=payload['geo_region'],
             new_band_names=payload['bands'],
             new_output_tiff_path=output_tiff,
             output_path=temp_graph
@@ -72,10 +96,7 @@ def process_tile_worker(payload):
             gpt_command, temp_graph,
             "-c", "1536M",
             "-J-Xmx2500M",
-            f"-J-Duser.home={worker_home}",
-            "-Dsnap.userdir=/root/.snap",
-            "-Dsnap.auxdata.dir=/root/.snap/auxdata",
-           
+            f"-J-Duser.home={worker_home}",           
             "-Dsnap.net.timeout=5",
             "-Djava.awt.headless=true",
             # This is the "Force Offline" combination:
@@ -101,6 +122,10 @@ def process_tile_worker(payload):
         stoptime = datetime.now().strftime("%Y%m%d_%H%M%S")
         print('Spark starting',starttime)
         print('Spark stopping',stoptime)
+        # -------------------------------
+        # Upload result to HDFS
+        # -------------------------------
+        hdfs_written_path = write_to_hdfs(output_tiff, payload['hdfs_output_path'])
         return {
             "tile_id": payload["tile_id"],
             "status": "Finished" if proc.returncode == 0 else "Failed",
@@ -109,7 +134,12 @@ def process_tile_worker(payload):
         
     except Exception as e:
         print(f"DEBUG: CRITICAL ERROR: {str(e)}")
-        return {"status": "Error", "msg": str(e)}
+        return {
+            "tile_id": payload.get('tile_id', 'Unknown'), 
+            "status": "Error", 
+            "code": -1, 
+            "msg": str(e)
+        }
 
 def preprocess_sar_spark(job_id, pending_files):
     #conf = SparkConf().setAppName("SAR_Tiled_Processing")
@@ -118,44 +148,41 @@ def preprocess_sar_spark(job_id, pending_files):
     # It allows the spark-submit command to decide the resources.
     sc = SparkContext.getOrCreate(conf=conf)
 
-    s_job_id = str(job_id)
-
+    S_JOB_ID = str(job_id)
+    HDFS_BASE = "/user/btcchl0040/spark_preprocessed"
+    
     for file in pending_files:
         base_path = os.getenv('BASE_PATH', '/home/btcchl0040/Documents/SAR_Data')
-        template_xml = os.path.join(os.getenv('TEMPLATE_PATH'), os.getenv('GRAPH_FILE_NAME'))
-        input_safe = os.path.join(base_path, os.getenv('INPUT_FOLDER_NAME'), file.folder_path)
-        output_dir = os.path.join(base_path, s_job_id, "PREPROCESSING", file.folder_path)
-        os.makedirs(output_dir, exist_ok=True)
-        
+        TEMPLATE_XML = os.path.join(os.getenv('TEMPLATE_PATH'), os.getenv('GRAPH_FILE_NAME'))
+        INPUT_FILE = os.path.join(base_path, os.getenv('INPUT_FOLDER_NAME'), file.folder_path)
+        OUTPUT_DIR = os.path.join(base_path, S_JOB_ID, "PREPROCESSING", file.folder_path)
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        HDFS_OUTPUT_DIR = f"{HDFS_BASE}/{S_JOB_ID}/{ file.folder_path}"
  
-        os.chmod(os.path.join(base_path, s_job_id), 0o777) # Open the timestamp folder
-        os.chmod(output_dir, 0o777)
-        x1, y1 = 17226, 5220
-        x2, y2 = 21538, 10977
-        width = x2 - x1
-        height = y2 - y1
+        os.chmod(os.path.join(base_path, S_JOB_ID), 0o777) # Open the timestamp folder
+        os.chmod(OUTPUT_DIR, 0o777)
+        
         tiles = [
-            {
-                "tile_id": "Quadrant_1",
-                "pixel_region": "9,0,25846,16734",
-                "subset_region": "17226,5220,25855,16735", # Format: x,y,w,h
-                "output_tiff": os.path.join(output_dir, f"tile_Q1_{s_job_id}.tif")
-            },
-             {
-                "tile_id": "Quadrant_2",
-                "pixel_region": "9,0,25846,16734",
-                "subset_region": "17226,5220,25855,16735", # Format: x,y,w,h
-                "output_tiff": os.path.join(output_dir, f"tile_Q2_{s_job_id}.tif")
-            }
+              {
+            "tile_id": "Quadrant_1",
+            "geo_region": "POLYGON ((-3.7 56.2, -3.1 56.2, -3.1 56.7, -3.7 56.7, -3.7 56.2))",
+            "output_tiff": os.path.join(OUTPUT_DIR, f"tile_Q1_{S_JOB_ID}.tif"),
+            "input_safe": INPUT_FILE,
+            "template_xml": TEMPLATE_XML,
+            "bands": "",
+             "hdfs_output_path": f"{HDFS_OUTPUT_DIR}/tile_Q2_{S_JOB_ID}.tif"
+        },
+          {
+            "tile_id": "Quadrant_2",
+            "geo_region": "POLYGON ((-3.4600000381469727 56.380001068115234, -3.4200000762939453 56.380001068115234, -3.4200000762939453 56.40999984741211, -3.4600000381469727 56.40999984741211, -3.4600000381469727 56.380001068115234, -3.4600000381469727 56.380001068115234))",
+            "output_tiff": os.path.join(OUTPUT_DIR, f"tile_Q2_{S_JOB_ID}.tif"),
+            "input_safe": INPUT_FILE,
+            "template_xml": TEMPLATE_XML,
+            "bands": "",
+             "hdfs_output_path": f"{HDFS_OUTPUT_DIR}/tile_Q2_{S_JOB_ID}.tif"
+        }
+             
         ]
-
-        for t in tiles:
-            t.update({
-                "input_safe": input_safe,
-                "template_xml": template_xml,
-                "output_dir": output_dir,
-                "bands": "" 
-            })
 
         print(f"🚀 Processing {file.folder_path} via Spark...")
         tile_rdd = sc.parallelize(tiles, numSlices=len(tiles))
@@ -175,14 +202,14 @@ if __name__ == "__main__":
             self.folder_path = path
 
     # Provide the Job ID and file to process
-    JOB_ID = str(time.time())
-    FILES = [FileInfo("S1C_IW_GRDH_1SDV_20250905T041254_20250905T041319_003984_007ED4_10D5.SAFE")]
+    S_JOB_ID = str(time.time())
+    FILES = [FileInfo("S1A_IW_GRDH_1SDV_20260127T063006_20260127T063031_062949_07E5BF_7B61.SAFE")]
 
     # Crucial: Ensure environment variables match your file system
     os.environ['BASE_PATH'] = '/opt/spark/data' 
     os.environ['TEMPLATE_PATH'] = '/opt/spark-jobs/templates'
     os.environ['GRAPH_FILE_NAME'] = 'preprocess_graphs.xml'
-    os.environ['INPUT_FOLDER_NAME'] = 'INPUT'
+    os.environ['INPUT_FOLDER_NAME'] = 'INPUT/Jan2026'
     
-    preprocess_sar_spark(JOB_ID, FILES)
+    preprocess_sar_spark(S_JOB_ID, FILES)
 

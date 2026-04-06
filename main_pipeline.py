@@ -3,7 +3,7 @@ import random
 from sar_pipeline.analysis.create_flood_mask import create_flood_mask,create_mask
 from sar_pipeline.analysis.merge_flooded_tiles import merge_flooded_tiles
 from sar_pipeline.db import fetch_processing_files, update_processing_files_by_jobid, insert_job
-from sar_pipeline.a_preprocessing.preprocess_sar import preprocess_sar_files
+from sar_pipeline.a_preprocessing.preprocess_standalone import preprocess_sar_files
 from sar_pipeline.a_preprocessing.split_geotiff_files import split_files
 from sqlalchemy import create_engine
 

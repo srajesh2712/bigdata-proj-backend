@@ -4,11 +4,11 @@
     <operator>Read</operator>
     <sources/>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-  <file>${input}</file>
+      <file>${input}</file>
       <useAdvancedOptions>false</useAdvancedOptions>
       <copyMetadata>true</copyMetadata>
-      <bandNames>Amplitude_VV,Intensity_VV</bandNames>
-      <pixelRegion>0,0,2147483647,2147483647</pixelRegion>
+      <bandNames>Amplitude_VV,Intensity_VV,Amplitude_VH,Intensity_VH</bandNames>
+     <pixelRegion/>
       <maskNames/>
     </parameters>
   </node>
@@ -23,17 +23,19 @@
       <continueOnFail>false</continueOnFail>
     </parameters>
   </node>
-   <node id="Subset">
+  <node id="Subset">
     <operator>Subset</operator>
     <sources>
       <sourceProduct refid="Apply-Orbit-File"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <sourceBands>Amplitude_VH,Intensity_VH,Amplitude_VV,Intensity_VV</sourceBands>
+      <sourceBands/>
       <tiePointGrids/>
-      <region>17226,5220,25855,16735</region>
+      <region>0,0,0,0</region>
       <referenceBand/>
-      <geoRegion/>
+     <geoRegion>
+POLYGON ((-3.7 56.2, -3.1 56.2, -3.1 56.7, -3.7 56.7, -3.7 56.2))
+</geoRegion>
       <subSamplingX>1</subSamplingX>
       <subSamplingY>1</subSamplingY>
       <fullSwath>false</fullSwath>
@@ -52,7 +54,7 @@
       <auxFile>Latest Auxiliary File</auxFile>
       <externalAuxFile/>
       <outputImageInComplex>false</outputImageInComplex>
-      <outputImageScaleInDb>true</outputImageScaleInDb>
+      <outputImageScaleInDb>false</outputImageScaleInDb>
       <createGammaBand>false</createGammaBand>
       <createBetaBand>false</createBetaBand>
       <selectedPolarisations/>
@@ -96,13 +98,13 @@
       <imgResamplingMethod>BILINEAR_INTERPOLATION</imgResamplingMethod>
       <pixelSpacingInMeter>0.0</pixelSpacingInMeter>
       <pixelSpacingInDegree>0.0</pixelSpacingInDegree>
-      <mapProjection>GEOGCS[&quot;WGS84(DD)&quot;, &#xd;
-  DATUM[&quot;WGS84&quot;, &#xd;
-    SPHEROID[&quot;WGS84&quot;, 6378137.0, 298.257223563]], &#xd;
-  PRIMEM[&quot;Greenwich&quot;, 0.0], &#xd;
-  UNIT[&quot;degree&quot;, 0.017453292519943295], &#xd;
-  AXIS[&quot;Geodetic longitude&quot;, EAST], &#xd;
-  AXIS[&quot;Geodetic latitude&quot;, NORTH], &#xd;
+      <mapProjection>GEOGCS[&quot;WGS84(DD)&quot;, 
+  DATUM[&quot;WGS84&quot;, 
+    SPHEROID[&quot;WGS84&quot;, 6378137.0, 298.257223563]], 
+  PRIMEM[&quot;Greenwich&quot;, 0.0], 
+  UNIT[&quot;degree&quot;, 0.017453292519943295], 
+  AXIS[&quot;Geodetic longitude&quot;, EAST], 
+  AXIS[&quot;Geodetic latitude&quot;, NORTH], 
   AUTHORITY[&quot;EPSG&quot;,&quot;4326&quot;]]</mapProjection>
       <alignToStandardGrid>false</alignToStandardGrid>
       <standardGridOriginX>0.0</standardGridOriginX>
@@ -126,29 +128,27 @@
       <externalAuxFile/>
     </parameters>
   </node>
-
-<node id="BandSelect">
-  <operator>BandSelect</operator>
-  <sources>
-    <sourceProduct refid="Terrain-Correction"/>
-  </sources>
-  <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-    <sourceBands>Sigma0_VV_dB</sourceBands>
-  </parameters>
-</node>
-
-
- <node id="Write">
+  <node id="BandSelect">
+    <operator>BandSelect</operator>
+    <sources>
+      <sourceProduct refid="Terrain-Correction"/>
+    </sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <selectedPolarisations/>
+      <selectedSubImages/>
+      <sourceBands/>
+      <bandNamePattern/>
+    </parameters>
+  </node>
+  <node id="Write">
     <operator>Write</operator>
-   <sources>
-    <sourceProduct refid="BandSelect"/>
-  </sources>
-   <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-    <file>${output}</file>
-    <formatName>GeoTIFF</formatName>
-
-</parameters>
-
+    <sources>
+      <sourceProduct refid="BandSelect"/>
+    </sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <file>/home/btcchl0040/Documents/SAR_Data/target.tif</file>
+      <formatName>GeoTIFF</formatName>
+    </parameters>
   </node>
   <applicationData id="Presentation">
     <Description/>
@@ -156,19 +156,25 @@
             <displayPosition x="32.0" y="279.0"/>
     </node>
     <node id="Apply-Orbit-File">
-      <displayPosition x="122.0" y="234.0"/>
+      <displayPosition x="97.0" y="236.0"/>
+    </node>
+    <node id="Subset">
+      <displayPosition x="212.0" y="204.0"/>
     </node>
     <node id="Calibration">
-      <displayPosition x="284.0" y="191.0"/>
+      <displayPosition x="284.0" y="164.0"/>
     </node>
     <node id="Speckle-Filter">
-      <displayPosition x="385.0" y="144.0"/>
+      <displayPosition x="368.0" y="130.0"/>
     </node>
     <node id="Terrain-Correction">
-      <displayPosition x="487.0" y="105.0"/>
+      <displayPosition x="460.0" y="93.0"/>
+    </node>
+    <node id="BandSelect">
+      <displayPosition x="582.0" y="57.0"/>
     </node>
     <node id="Write">
-            <displayPosition x="662.0" y="48.0"/>
+            <displayPosition x="661.0" y="18.0"/>
     </node>
   </applicationData>
 </graph>

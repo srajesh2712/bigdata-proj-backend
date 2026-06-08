@@ -1,12 +1,12 @@
-import traceback
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lit, concat_ws, to_timestamp, unix_timestamp
-from datetime import datetime
-from pyspark.sql.types import StringType
 import os
 import subprocess
-import fsspec
+import traceback
 import xml.etree.ElementTree as ET
+from datetime import datetime
+import fsspec
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, lit, to_timestamp, unix_timestamp
+from pyspark.sql.types import StringType
 
 # ----------------------------
 # Configuration
@@ -67,17 +67,23 @@ def update_snap_graph(xml_path, new_input_safe_path, new_geo_region, new_band_na
     tree.write(output_path, encoding="UTF-8", xml_declaration=True)
     return output_path
 
-# ----------------------------
-# Tile processor
-# ----------------------------
-def process_tile_worker(payload):
-    print(f"DEBUG: Attempting to set 'Read' file to: {payload}")
-    starttime = datetime.now().strftime("%Y%m%d_%H%M%S")
-    temp_graph = os.path.join("/tmp", f"graph_{payload['task_id']}.xml")
-    
-    try:
-        # Step 1: Update XML
+def process_tiles_in_partition(records):
+    """
+    Processes an entire partition block of tiles sequentially on the same worker,
+    minimizing setup overhead where possible.
+    """
+    gpt_command = "/opt/snap/bin/gpt"
+    if not os.path.exists(gpt_command):
+        raise FileNotFoundError(f"GPT binary not found at {gpt_command}")
+        
+    partition_results = []
+
+    for payload in records:
+        starttime = datetime.now().strftime("%Y%m%d_%H%M%S")
+        temp_graph = os.path.join("/tmp", f"graph_{payload['task_id']}.xml")
+        
         try:
+            # Step 1: Update XML
             update_snap_graph(
                 xml_path=TEMPLATE_XML_PATH,
                 new_input_safe_path=payload['local_path'],
@@ -86,78 +92,74 @@ def process_tile_worker(payload):
                 new_output_tiff_path=payload['output_tiff'],
                 output_path=temp_graph
             )
-        except Exception as xml_err:
-            raise RuntimeError(f"XML Update Failed: {str(xml_err)}")
 
-        # Step 2: Run GPT
-        gpt_command = "/opt/snap/bin/gpt"
-        if not os.path.exists(gpt_command):
-            raise FileNotFoundError(f"GPT binary not found at {gpt_command}")
+            # Step 2: Synchronized execution arguments matching Standalone environment
+            cmd = [
+                gpt_command, temp_graph,
+                "-e",
+                "-c", "2G",
+                "-J-Xmx6G",
+                "-q", "2",
+                "-J-Duser.home=/tmp",
+                "-Dsnap.jai.defaultTileSize=512",
+                "-Dsnap.dataio.reader.tileWidth=512",
+                "-Dsnap.dataio.reader.tileHeight=512",
+                "-Djava.awt.headless=true",
+                "-PexternalOrbitFile=none"
+            ]
+            
+            try:
+                # Use DEVNULL to bypass background log processing chains
+                subprocess.run(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.STDOUT,
+                    check=True
+                )
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"GPT failed inside Spark worker with code {e.returncode}")
 
-        cmd = [
-            gpt_command, temp_graph,
-            "-c", "1536M",
-            "-J-Xmx2500M",
-            f"-J-Duser.home=/tmp",
-            "-Dsnap.net.timeout=5",
-            "-Djava.awt.headless=true",
-            "-Dsnap.productlibrary.disable=true",
-            "-PexternalOrbitFile=none"
-        ]
-        
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        
-        # Capture logs for debugging
-        captured_logs = []
-        for line in proc.stdout:
-            log_line = line.strip()
-            captured_logs.append(log_line)
-            print(f"[{payload['task_id']}] {log_line}")
-        
-        proc.wait()
-        
-        if proc.returncode != 0:
-            last_logs = "\n".join(captured_logs[-50:]) # Get last 5 lines of error
-            raise RuntimeError(f"GPT exited with code {proc.returncode}. Last logs: {last_logs}")
-
-        # Step 3: Upload to HDFS
-        try:
+            # Step 3: HDFS Upload
             file_size = os.path.getsize(payload['output_tiff'])
             hdfs_path = write_to_hdfs(payload['output_tiff'], payload['hdfs_output_path'])
-        except Exception as hdfs_err:
-            raise RuntimeError(f"HDFS Upload Failed: {str(hdfs_err)}")
 
-        return {
-            "task_id": payload['task_id'],
-            "job_id": payload['job_id'],
-            "scene_id": payload['scene_id'],
-            "status": "FINISHED",
-            "code": 0,
-            "hdfs_path": hdfs_path,
-            "start_time": starttime,
-            "stop_time": datetime.now().strftime("%Y%m%d_%H%M%S"),
-            "hdfs_path": hdfs_path,
-            "file_size": file_size,
-            "format": "TIFF",
-            "type": "PREPROCESSED_TILE"
-        }
+            # Append successful result record
+            partition_results.append({
+                "task_id": payload['task_id'],
+                "job_id": payload['job_id'],
+                "scene_id": payload['scene_id'],
+                "status": "FINISHED",
+                "code": 0,
+                "hdfs_path": hdfs_path,
+                "start_time": starttime,
+                "stop_time": datetime.now().strftime("%Y%m%d_%H%M%S"),
+                "file_size": file_size,
+                "format": "TIFF",
+                "type": "PREPROCESSED_TILE",
+                "region_wkt": payload['region_wkt'],
+            })
 
-    except Exception as e:
-        # This catches everything and sends the full traceback back to the driver
-        return {
-            "task_id": payload['task_id'],
-            "status": "ERROR",
-            "code": -1,
-            "msg": f"{str(e)} | Traceback: {traceback.format_exc()}",
-            "start_time": starttime,
-            "stop_time": datetime.now().strftime("%Y%m%d_%H%M%S")
-        }
+        except Exception as e:
+            partition_results.append({
+                "task_id": payload['task_id'],
+                "job_id": payload['job_id'],
+                "scene_id": payload['scene_id'],
+                "status": "ERROR",
+                "code": -1,
+                "msg": f"{str(e)} | Traceback: {traceback.format_exc()}",
+                "start_time": starttime,
+                "stop_time": datetime.now().strftime("%Y%m%d_%H%M%S"),
+                "region_wkt": payload['region_wkt']
+            })
+            
+    return iter(partition_results)
 
 # ----------------------------
 # Main: fetch tasks and process
 # ----------------------------
-def preprocess_sar_from_db(job_id):
-    # Join tables: job_tasks -> processing_job -> sar_scene_master
+def preprocess_sar_from_db(job_ids):
+    job_ids_str = ",".join(map(str, job_ids))
+    
     query = f"""
     (SELECT t.task_id,
             t.task_name,
@@ -165,36 +167,39 @@ def preprocess_sar_from_db(job_id):
             j.job_id,
             s.scene_id,
             '{BASE_PATH}/INPUT/' || s.local_path  AS local_path,
-            '{BASE_PATH}/INPUT/' || s.scene_name || '_output.tif' AS output_tiff,
+            '{BASE_PATH}/INPUT/' || s.scene_name || '_task_' || t.task_id || '_output.tif' AS output_tiff,
             '{HDFS_BASE}/' || j.job_id || '/' || t.task_id || '_tile.tif' AS hdfs_output_path
      FROM sar.job_tasks t
      JOIN sar.processing_job j ON t.job_id = j.job_id
      JOIN sar.sar_scene_master s ON j.scene_id = s.scene_id
-     WHERE t.job_id = {job_id} AND t.task_status IN ('CREATED','QUEUED')
+     WHERE t.job_id IN ({job_ids_str}) AND t.task_status IN ('CREATED','QUEUED')
     ) as job_payload
     """
     payload_df = spark.read.jdbc(JDBC_URL, query, properties=DB_PROPERTIES)
     print("DEBUG: Preparing to send the following payload to Workers:")
     payload_df.show(truncate=False)
-    # Convert to RDD for parallel processing
-    payload_rdd = payload_df.rdd.map(lambda row: row.asDict())
+    
+    # Convert to standard dictionary RDD tracking
+    base_rdd = payload_df.rdd.map(lambda row: row.asDict())
+    
+    # Force partitioning dynamically down to node job groups at the RDD layer
+    payload_rdd = base_rdd.keyBy(lambda r: r["job_id"]) \
+                      .partitionBy(len(job_ids)) \
+                      .values()
 
-    results = payload_rdd.map(process_tile_worker).collect()
+    results = payload_rdd.mapPartitions(process_tiles_in_partition).collect()
 
     for res in results:
-        print(res)
-        
         if res['status'] == "ERROR":
-            print(f"❌ Task {res['task_id']}: FAILED")
+            print(f"❌ Task {res['task_id']} (Job {res.get('job_id')}): FAILED")
             print(f"   Reason: {res.get('msg')}")
         else:
-            print(f"✅ Task {res['task_id']}: {res['status']} (Path: {res.get('hdfs_path')})")
+            print(f"✅ Task {res['task_id']} (Job {res.get('job_id')}): {res['status']} (Path: {res.get('hdfs_path')})")
+            
     success_rows = [r for r in results if r['status'] == "FINISHED"]
     if success_rows:
-        # 1. Create DataFrame (columns will be 'type', 'format', etc.)
         raw_artifact_df = spark.createDataFrame(success_rows)
         
-        # 2. Select and Rename columns to match your Postgres Table DDL
         artifact_df = raw_artifact_df.select(
             col("job_id").cast("long"),
             col("task_id").cast("long"),
@@ -202,18 +207,17 @@ def preprocess_sar_from_db(job_id):
             col("type").alias("artifact_type"),
             col("format").alias("file_format"),
             col("hdfs_path"),
-            # FIX: Explicitly cast the Null to a String
-            lit(None).cast(StringType()).alias("local_path"), 
+            lit("SPARK").cast(StringType()).alias("local_path"), 
             col("file_size").alias("file_size_bytes").cast("long"),
             to_timestamp(col("start_time"), "yyyyMMdd_HHmmss").alias("start_time"),
             to_timestamp(col("stop_time"), "yyyyMMdd_HHmmss").alias("stop_time"),
-           (
+            (
                 unix_timestamp(col("stop_time"), "yyyyMMdd_HHmmss") - 
                 unix_timestamp(col("start_time"), "yyyyMMdd_HHmmss")
-            ).alias("duration_seconds")
+            ).alias("duration_seconds"),
+            col("region_wkt").alias("region_wkt")
         )
 
-        # 3. Write to JDBC
         try:
             artifact_df.write.jdbc(
                 url=JDBC_URL, 
@@ -224,9 +228,10 @@ def preprocess_sar_from_db(job_id):
             print(f"✅ Logged {len(success_rows)} artifacts to DB.")
         except Exception as db_err:
             print(f"❌ JDBC Write Failed: {str(db_err)}")
+
 # ----------------------------
 # Entry point
 # ----------------------------
 if __name__ == "__main__":
-    JOB_ID = 1  # Replace with your actual job_id
-    preprocess_sar_from_db(JOB_ID)
+    TARGET_JOBS = [8, 7, 6, 5]
+    preprocess_sar_from_db(TARGET_JOBS)

@@ -5,9 +5,10 @@ import time
 import sys
 import xml.etree.ElementTree as ET
 from sqlalchemy import create_engine
-from sar_pipeline.db import connect_db, insert_start_time, update_end_time
+
 from sqlalchemy.orm import sessionmaker
 
+from sar_pipeline.db import insert_start_time, update_end_time
 from sar_pipeline.schema.schema import SafeFile, Base
 from dotenv import load_dotenv
 load_dotenv()
@@ -80,11 +81,15 @@ def run_snap_graph(graph_path, input_file, output_file):
 
     command = [
         "gpt", graph_path,
+        "-c", "4G",
+        "-Dsnap.jai.defaultTileSize=512",
+        "-Dsnap.dataio.reader.tileWidth=512",
+        "-Dsnap.dataio.reader.tileHeight=512",
         f"-Pinput={input_file}",
         f"-Poutput={output_file}"
     ]
 
-    print(f"\n▶️ Running SNAP GPT with command:\n{' '.join(command)}\n")
+    print(f"\n️ Running SNAP GPT with command:\n{' '.join(command)}\n")
 
     try:
         process = subprocess.Popen(
@@ -129,7 +134,7 @@ def preprocess_sar_files(job_id,pending_files):
 
             graph_xml =os.path.join(graph_xml_path,os.getenv('GRAPH_FILE_NAME') )#"preprocessinggraph.xml" )
             input_safe = os.path.join(base_path,os.getenv('INPUT_FOLDER_NAME'),safe_folder_path)
-            output_dir = os.path.join(base_path, job_id,os.getenv('PREPROCESSING_FOLDER_NAME'), file.folder_path)
+            output_dir = os.path.join(base_path, str(job_id),os.getenv('PREPROCESSING_FOLDER_NAME'), file.folder_path)
             os.makedirs(output_dir, exist_ok=True)
 
             output_file = os.path.join(output_dir, f"{file.folder_path}_{job_id}.tif")
@@ -139,7 +144,7 @@ def preprocess_sar_files(job_id,pending_files):
                 new_input_safe_path=input_safe,
                 new_pixel_region="9,0,25846,16734",
                 new_subset_region="17226,5220,25855,16735",
-                new_band_names="Amplitude_VH,Intensity_VH,Amplitude_VV,Intensity_VV",
+                new_band_names="",
                 new_output_tiff_path=output_file,
                 output_path=os.path.join(os.getenv('BASE_PATH'),"modified_graph.xml")
             )

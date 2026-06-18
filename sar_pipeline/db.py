@@ -40,9 +40,9 @@ def fetch_processing_files(session):
     return pending_files
 
 
-def update_processing_files_by_jobid(session,job_id, new_status='in_progress'):
+def update_processing_files_by_jobid(session,job_id, new_status='completed'):
     # Get all files with the given job_id
-    files_to_update = session.query(SafeFile).filter_by(job_id=job_id).all()
+    files_to_update = session.query(SafeFile).filter_by(id=job_id).all()
 
     for file in files_to_update:
         file.status = new_status  # e.g., 'in_progress', 'completed', 'failed'
@@ -50,3 +50,12 @@ def update_processing_files_by_jobid(session,job_id, new_status='in_progress'):
     session.commit()
     print(f"Updated {len(files_to_update)} files to status '{new_status}' for job_id '{job_id}'")
 
+def insert_job(status):
+    conn = connect_db()
+    start_time = datetime.now()
+    with conn.cursor() as cur:
+        cur.execute("INSERT INTO eo_jobs (status) VALUES (%s) RETURNING id", [status])
+        job_id = cur.fetchone()[0]
+        conn.commit()
+        conn.close()
+    return job_id

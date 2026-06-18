@@ -9,7 +9,7 @@ vv_pre_path ='E:\\Big Data\\Summer Project\\Assam-Flood-June2-2025\\20250521\\su
 vv_post_path='E:\\Big Data\\Summer Project\\Assam-Flood-June2-2025\\20250602\\subset_0_of_S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58_Orb_Cal_Spk_TC.tif'
 #vv_pre_path = 'E:\\Big Data\\Summer Project\\Assam-Flood-June5-2024\\Preflood-May24-2024\\20240524\\subset_3_of_S1A_IW_GRDH_1SDV_20240524T115717_20240524T115742_054013_069101_5DC9_Orb_Cal_Spk_TC.tif'
 #vv_post_path  = 'E:\\Big Data\\Summer Project\\Assam-Flood-June5-2024\\Flood-June5-2024\\20240605\\subset_0_of_S1A_IW_GRDH_1SDV_20240605T115717_20240605T115742_054188_06970B_2DFB_Orb_Cal_Spk_TC.tif'
-model_path = '../assets/rf_checkpoint.joblib'
+model_path = '../assets/rf_checkpoint_1.joblib'
 output_path = '../assets/predicted_flood_assam_june_2025.tif'
 
 

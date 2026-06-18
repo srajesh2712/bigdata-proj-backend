@@ -174,7 +174,7 @@ def main():
         StructField("min_lat", DoubleType(), True),
         StructField("max_lon", DoubleType(), True),
         StructField("max_lat", DoubleType(), True),
-        StructField("processed_at", StringType(), True)  # Keep as string, cast to timestamp later or use TimestampType
+        StructField("processed_at", StringType(), True)
     ])
 
     spark = (
@@ -229,8 +229,8 @@ def main():
     verify_cog("/user/btcchl0040/sar/results/masks/tile_02_mask.tif")
     #time.sleep(1000)
     tasks = []
-    offset_x = 4000
-    offset_y = 4000
+    offset_x = 0
+    offset_y = 0
     for r in range(6):
         for c in range(7):
             tasks.append(

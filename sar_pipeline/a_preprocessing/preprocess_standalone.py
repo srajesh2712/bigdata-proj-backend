@@ -5,32 +5,29 @@ import time
 import sys
 import xml.etree.ElementTree as ET
 from sqlalchemy import create_engine
-
+import psutil
 from sqlalchemy.orm import sessionmaker
 
 from sar_pipeline.db import insert_start_time, update_end_time
 from sar_pipeline.schema.schema import SafeFile, Base
 from dotenv import load_dotenv
+
 load_dotenv()
-engine = create_engine("postgresql+psycopg2://rajesh:rajesh@localhost/eo")
+
+# Updated engine with explicit search path routing
+engine = create_engine(
+    "postgresql+psycopg2://rajesh:rajesh@localhost/eo",
+    connect_args={"options": "-csearch_path=sar"}
+)
 Base.metadata.create_all(bind=engine)
 Session = sessionmaker(bind=engine)
 session = Session()
 
-def update_snap_graph(
-    xml_path,
-    new_input_safe_path,
-    new_pixel_region,        # e.g., "9,0,25846,16734"
-    new_subset_region,       # e.g., "17226,5220,25855,16735"
-    new_band_names,          # e.g., "Amplitude_VH,Intensity_VH"
-    new_output_tiff_path,
-    output_path
-):
-    # Load the XML
+
+def update_snap_graph(xml_path, new_input_safe_path, new_geo_region, new_band_names, new_output_tiff_path, output_path):
     tree = ET.parse(xml_path)
     root = tree.getroot()
 
-    # Helper function to find a node by its id
     def find_node_param(node_id, param_name):
         for node in root.findall(".//node"):
             if node.attrib.get("id") == node_id:
@@ -39,41 +36,25 @@ def update_snap_graph(
                     return params.find(param_name)
         return None
 
-    # Update Read → file + pixelRegion
     read_file = find_node_param("Read", "file")
-    pixel_region = find_node_param("Read", "pixelRegion")
+    pixel_region = find_node_param("Subset", "geoRegion")
+    if (subset_bands := find_node_param("Subset", "sourceBands")) is not None:
+        subset_bands.text = new_band_names
     if read_file is not None:
         read_file.text = new_input_safe_path
     if pixel_region is not None:
-        pixel_region.text = new_pixel_region
+        pixel_region.text = new_geo_region
 
-    # Update Subset → region + bands
-    subset_region = find_node_param("Subset", "region")
-    subset_bands = find_node_param("Subset", "sourceBands")
-    if subset_region is not None:
-        subset_region.text = new_subset_region
-    if subset_bands is not None:
-        subset_bands.text = new_band_names
-
-    # Update Write → file
     write_file = find_node_param("Write", "file")
     if write_file is not None:
         write_file.text = new_output_tiff_path
 
-    # Save the updated file
     tree.write(output_path, encoding="UTF-8", xml_declaration=True)
     print(f"✅ Graph updated and saved to: {output_path}")
     return output_path
 
-def run_snap_graph(graph_path, input_file, output_file):
-    """
-    Run a SNAP Graph XML using the gpt command-line tool.
 
-    Parameters:
-    - graph_path: Path to the .xml graph
-    - input_file: Path to the input .SAFE file (manifest.safe)
-    - output_file: Path to the output GeoTIFF or DIMAP file
-    """
+def run_snap_graph(graph_path, input_file, output_file):
     if not os.path.isfile(graph_path):
         raise FileNotFoundError(f"Graph file not found: {graph_path}")
     if not os.path.exists(input_file):
@@ -81,17 +62,23 @@ def run_snap_graph(graph_path, input_file, output_file):
 
     command = [
         "gpt", graph_path,
-        "-c", "4G",
+        "-e",
+        "-c", "2G",
+        "-J-Xmx6G",
+        "-q", "2",
+        "-J-Duser.home=/tmp",
         "-Dsnap.jai.defaultTileSize=512",
         "-Dsnap.dataio.reader.tileWidth=512",
         "-Dsnap.dataio.reader.tileHeight=512",
+        "-Djava.awt.headless=true",
         f"-Pinput={input_file}",
         f"-Poutput={output_file}"
     ]
 
-    print(f"\n️ Running SNAP GPT with command:\n{' '.join(command)}\n")
+    print(f"\n Running SNAP GPT with command:\n{' '.join(command)}\n")
 
     try:
+        # Fixed: Removed check=True (unsupported in Popen) and changed DEVNULL to PIPE for logging output
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
@@ -100,61 +87,73 @@ def run_snap_graph(graph_path, input_file, output_file):
             bufsize=1
         )
 
-        while True:
-            char = process.stdout.read(1)
-            if not char:
+        proc_monitor = psutil.Process(process.pid)
+        peak_cpu = 0
+        peak_mem = 0
+
+        # Non-blocking stream processing while process executes
+        while process.poll() is None:
+            try:
+                cpu = proc_monitor.cpu_percent(interval=0.1)
+                mem = proc_monitor.memory_info().rss / (1024 * 1024)
+                peak_cpu = max(peak_cpu, cpu)
+                peak_mem = max(peak_mem, mem)
+            except psutil.NoSuchProcess:
                 break
-            sys.stdout.write(char)
+
+            # Stream the stdout lines sequentially
+            line = process.stdout.readline()
+            if line:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+
+        print(f"Metrics: Peak CPU: {peak_cpu}%, Peak RAM: {peak_mem:.2f} MB")
+
+        # Read any remaining output lines after process ends
+        remaining_output = process.communicate()[0]
+        if remaining_output:
+            sys.stdout.write(remaining_output)
             sys.stdout.flush()
-        process.wait()
+
         if process.returncode == 0:
             print(f"\n✅ Processing completed. Output saved at: {output_file}")
         else:
             print(f"\n❌ SNAP GPT exited with code {process.returncode}")
-    except subprocess.CalledProcessError as e:
-        print("\n❌ Error during SNAP processing:")
-        print(e)
-        print("STDOUT:\n", e.stdout)
-        print("STDERR:\n", e.stderr)
+
+    except Exception as e:
+        print(f"\n❌ Error during SNAP processing: {str(e)}")
 
 
-def preprocess_sar_files(job_id,pending_files):
+def preprocess_sar_files(job_id, pending_files):
     log_id, start = insert_start_time('SAR_PREPROCESSING')
-
     print(f"Started at {start}, log ID: {log_id}")
+
     try:
-
-
         for file in pending_files:
             print(file.folder_path)
             current_time = str(time.time())
-            base_path =os.getenv('BASE_PATH')# "/home/btcchl0040/Documents/SAR_Data/"
-            graph_xml_path = os.getenv('TEMPLATE_PATH')#"/home/btcchl0040/Documents/SAR_Data"
-            safe_folder_path =file.folder_path# "S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE"
+            base_path = os.getenv('BASE_PATH')
+            graph_xml_path = os.getenv('TEMPLATE_PATH')
+            safe_folder_path = file.folder_path
 
-            graph_xml =os.path.join(graph_xml_path,os.getenv('GRAPH_FILE_NAME') )#"preprocessinggraph.xml" )
-            input_safe = os.path.join(base_path,os.getenv('INPUT_FOLDER_NAME'),safe_folder_path)
-            output_dir = os.path.join(base_path, str(job_id),os.getenv('PREPROCESSING_FOLDER_NAME'), file.folder_path)
+            graph_xml = os.path.join(graph_xml_path, os.getenv('GRAPH_FILE_NAME'))
+            input_safe = os.path.join(base_path, os.getenv('INPUT_FOLDER_NAME'), safe_folder_path)
+            output_dir = os.path.join(base_path, str(job_id), os.getenv('PREPROCESSING_FOLDER_NAME'), file.folder_path)
             os.makedirs(output_dir, exist_ok=True)
 
             output_file = os.path.join(output_dir, f"{file.folder_path}_{job_id}.tif")
+            target_test_band = ""
 
             graph_xml = update_snap_graph(
                 xml_path=graph_xml,
                 new_input_safe_path=input_safe,
-                new_pixel_region="9,0,25846,16734",
-                new_subset_region="17226,5220,25855,16735",
-                new_band_names="",
+                new_geo_region="POLYGON ((-3.7 56.2, -3.1 56.2, -3.1 56.7, -3.7 56.7, -3.7 56.2))",
+                new_band_names=target_test_band,
                 new_output_tiff_path=output_file,
-                output_path=os.path.join(os.getenv('BASE_PATH'),"modified_graph.xml")
+                output_path=os.path.join(os.getenv('BASE_PATH'), "modified_graph.xml")
             )
             run_snap_graph(graph_xml, input_safe, output_file)
 
     finally:
-
         end = update_end_time(log_id)
         print(f"Ended at {end}")
-
-
-
-

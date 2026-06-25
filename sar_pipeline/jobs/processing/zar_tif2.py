@@ -21,10 +21,10 @@ AOI_Y0, AOI_Y1 = 0, 5000
 BAND_INDEX = 1
 
 ZARR_PATHS = [
-    ("/user/btcchl0040/dask_preprocessed/1/20_tile.zarr", "2024-01-01"),
-    ("/user/btcchl0040/dask_preprocessed/2/17_tile.zarr", "2024-01-13"),
-    ("/user/btcchl0040/dask_preprocessed/3/18_tile.zarr", "2024-01-25"),
-    ("/user/btcchl0040/dask_preprocessed/4/19_tile.zarr", "2024-02-06"),
+    ("/user/btcchl0040/dask_preprocessed/1/20_tile.b_storage", "2024-01-01"),
+    ("/user/btcchl0040/dask_preprocessed/2/17_tile.b_storage", "2024-01-13"),
+    ("/user/btcchl0040/dask_preprocessed/3/18_tile.b_storage", "2024-01-25"),
+    ("/user/btcchl0040/dask_preprocessed/4/19_tile.b_storage", "2024-02-06"),
 ]
 TIFF_PATHS = [
     ("/user/btcchl0040/dask_preprocessed/1/20_tile.tif", "2024-01-01"),

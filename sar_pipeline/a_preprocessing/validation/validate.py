@@ -1,15 +1,53 @@
 import rasterio
 import numpy as np
+import xarray as xr
+import matplotlib.pyplot as plt
+from scipy.stats import ks_2samp
 
+# -----------------------------
+# FILE PATHS
+# -----------------------------
 snap_file = "/home/btcchl0040/Documents/SAR_Data/validation/Snap_preprocessed.tif"
 pysnap_file = "/home/btcchl0040/Documents/SAR_Data/validation/Pysnap_preprocessed.tif"
 spark_file = "/home/btcchl0040/Documents/SAR_Data/validation/40_tile_spark_preprocessed.tif"
 dask_file = "/home/btcchl0040/Documents/SAR_Data/validation/40_tile_dask_preprocessed.tif"
-def read_band(path, band):
+zarr_file = "/home/btcchl0040/Documents/SAR_Data/validation/40_tile.zarr"
+
+
+# -----------------------------
+# READ TIFF
+# -----------------------------
+def read_band(path, band=1):
     with rasterio.open(path) as src:
         return src.read(band).astype(np.float32)
 
+
+# -----------------------------
+# READ ZARR (FIXED)
+# -----------------------------
+def read_zarr_band(path, band=1):
+    ds = xr.open_zarr(path)
+    var = list(ds.data_vars)[0]
+    arr = ds[var].values
+    return arr[band - 1].astype(np.float32)
+
+
+# -----------------------------
+# SAFE ALIGNMENT (CRITICAL FIX)
+# -----------------------------
+def align(a, b):
+    min_y = min(a.shape[0], b.shape[0])
+    min_x = min(a.shape[1], b.shape[1])
+    return a[:min_y, :min_x], b[:min_y, :min_x]
+
+
+# -----------------------------
+# METRICS (RMSE + CORR in dB)
+# -----------------------------
 def metrics(a, b):
+
+    a, b = align(a, b)
+
     mask = np.isfinite(a) & np.isfinite(b) & (a > 0) & (b > 0)
     a = a[mask]
     b = b[mask]
@@ -23,105 +61,93 @@ def metrics(a, b):
     return rmse, corr
 
 
-import rasterio
+# -----------------------------
+# KS DISTANCE (distribution test)
+# -----------------------------
+def ks_distance(a, b):
 
-def inspect(path):
+    a, b = align(a, b)
+
+    mask = np.isfinite(a) & np.isfinite(b) & (a > 0) & (b > 0)
+
+    a = a[mask].ravel()
+    b = b[mask].ravel()
+
+    stat, p = ks_2samp(a, b)
+    return stat, p
+
+
+# -----------------------------
+# INSPECTION
+# -----------------------------
+def inspect_tiff(path):
     with rasterio.open(path) as src:
-        print("\n", path)
+        print("\nTIFF:", path)
         print("Bands:", src.count)
-        for i in range(1, src.count+1):
+
+        for i in range(1, src.count + 1):
             band = src.read(i)
-            print(i, np.nanmin(band), np.nanmax(band))
-
-inspect(snap_file)
-inspect(pysnap_file)
-inspect(spark_file)
-inspect(dask_file)
+            print(f"Band {i}: min={band.min()}, max={band.max()}")
 
 
-import rasterio
+def inspect_zarr(path):
+    ds = xr.open_zarr(path)
+    arr = list(ds.data_vars.values())[0].values
+
+    print("\nZARR:", path)
+    for i in range(arr.shape[0]):
+        print(f"Band {i+1}: min={arr[i].min()}, max={arr[i].max()}")
 
 
-with rasterio.open(snap_file) as src:
-    print("Width:", src.width)
-    print("Height:", src.height)
-    print("Bands:", src.count)
-    print("Driver:", src.driver)
-    print("Block size:", src.block_shapes)
-    print("Is tiled:", src.is_tiled)
+# -----------------------------
+# RUN INSPECTION
+# -----------------------------
+inspect_tiff(snap_file)
+inspect_tiff(pysnap_file)
+inspect_tiff(spark_file)
+inspect_tiff(dask_file)
+inspect_zarr(zarr_file)
 
 
-with rasterio.open(pysnap_file) as src:
-    print("Width:", src.width)
-    print("Height:", src.height)
-    print("Bands:", src.count)
-    print("Driver:", src.driver)
-    print("Block size:", src.block_shapes)
-    print("Is tiled:", src.is_tiled)
+# -----------------------------
+# VALIDATION LOOP
+# -----------------------------
+def run_validation():
+
+    for band in [1, 2]:
+
+        print("\n==============================")
+        print("BAND:", band)
+        print("==============================")
+
+        snap = read_band(snap_file, band)
+        pysnap = read_band(pysnap_file, band)
+        spark = read_band(spark_file, band)
+        dask = read_band(dask_file, band)
+        zarr = read_zarr_band(zarr_file, band)
+
+        datasets = {
+            "SNAP": snap,
+            "PySNAP": pysnap,
+            "Spark": spark,
+            "Dask": dask,
+            "Zarr": zarr
+        }
+
+        base = snap
+
+        print("\n--- RMSE + CORR (dB domain) ---")
+        for name, arr in datasets.items():
+            rmse, corr = metrics(base, arr)
+            print(f"{name:8s} -> RMSE: {rmse:.5f}, Corr: {corr:.5f}")
+
+        print("\n--- KS TEST (linear domain) ---")
+        for name, arr in datasets.items():
+            stat, p = ks_distance(base, arr)
+            print(f"{name:8s} -> KS stat: {stat:.5f}, p-value: {p:.5e}")
 
 
-with rasterio.open(spark_file) as src:
-    print("Width:", src.width)
-    print("Height:", src.height)
-    print("Bands:", src.count)
-    print("Driver:", src.driver)
-    print("Block size:", src.block_shapes)
-    print("Is tiled:", src.is_tiled)
-
-with rasterio.open(dask_file) as src:
-    print("Width:", src.width)
-    print("Height:", src.height)
-    print("Bands:", src.count)
-    print("Driver:", src.driver)
-    print("Block size:", src.block_shapes)
-    print("Is tiled:", src.is_tiled)
-
-import matplotlib.pyplot as plt
-
-
-def plot_paper_histograms():
-    # Load Band 1 for all products
-    snap_b1 = read_band(snap_file, 1)
-    pysnap_b1 = read_band(pysnap_file, 1)
-    spark_b1 = read_band(spark_file, 1)
-    dask_b1 = read_band(dask_file, 1)
-
-    # Filter valid positive pixels and convert to dB
-    def to_db_valid(arr):
-        mask = np.isfinite(arr) & (arr > 0)
-        return 10 * np.log10(arr[mask])
-
-    snap_db = to_db_valid(snap_b1)
-    pysnap_db = to_db_valid(pysnap_b1)
-    spark_db = to_db_valid(spark_b1)
-    dask_db = to_db_valid(dask_b1)
-
-    # Plot setup (JSTARS standard: clear fonts, distinct line styles)
-    plt.figure(figsize=(10, 5), dpi=300)
-
-    # Common histogram settings
-    bins = 100
-    hist_kwargs = {'bins': bins, 'density': True, 'histtype': 'step', 'linewidth': 1.5}
-
-    # Plot lines
-    plt.hist(snap_db, label='SNAP Desktop', linestyle='-', color='black', **hist_kwargs)
-    plt.hist(pysnap_db, label='PySNAP', linestyle='--', color='blue', **hist_kwargs)
-    plt.hist(spark_db, label='Spark ', linestyle='-.', color='green', **hist_kwargs)
-    plt.hist(dask_db, label='Dask ', linestyle=':', color='red', **hist_kwargs)
-
-    # Formatting for journal publication
-    plt.title("Backscattering Coefficient ($\sigma^0$) Distribution Comparison", fontsize=12, fontweight='bold')
-    plt.xlabel("Backscattering Intensity [dB]", fontsize=10)
-    plt.ylabel("Probability Density", fontsize=10)
-    plt.grid(True, linestyle=':', alpha=0.6)
-    plt.legend(loc='upper right', fontsize=9)
-
-    plt.tight_layout()
-
-    # Save for LaTeX submission
-    plt.savefig("sar_preprocessing_histogram_comparison.png", dpi=300)
-    plt.show()
-
-
-# Run the plotting function
-plot_paper_histograms()
+# -----------------------------
+# RUN
+# -----------------------------
+run_validation()

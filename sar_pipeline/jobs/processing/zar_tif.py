@@ -23,10 +23,10 @@ BAND_INDEX = 1  # rasterio bands start at 1
 
 # Paths
 ZARR_PATHS = [
-    ("/user/btcchl0040/dask_preprocessed/1/13_tile.zarr", "2024-01-01"),
-    ("/user/btcchl0040/dask_preprocessed/2/16_tile.zarr", "2024-01-13"),
-    ("/user/btcchl0040/dask_preprocessed/3/15_tile.zarr", "2024-01-25"),
-    ("/user/btcchl0040/dask_preprocessed/4/14_tile.zarr", "2024-02-06"),
+    ("/user/btcchl0040/dask_preprocessed/1/13_tile.b_storage", "2024-01-01"),
+    ("/user/btcchl0040/dask_preprocessed/2/16_tile.b_storage", "2024-01-13"),
+    ("/user/btcchl0040/dask_preprocessed/3/15_tile.b_storage", "2024-01-25"),
+    ("/user/btcchl0040/dask_preprocessed/4/14_tile.b_storage", "2024-02-06"),
 ]
 TIFF_PATHS = [
     ("/user/btcchl0040/dask_preprocessed/1/13_tile.tif", "2024-01-01"),

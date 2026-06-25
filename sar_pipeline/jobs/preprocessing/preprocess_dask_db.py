@@ -75,7 +75,7 @@ def process_tile_worker(payload):
         input_file = payload['local_input_path']
         output_tiff = payload['local_output_path']
         hdfs_output_path = payload['hdfs_output_path']
-        hdfs_zarr_path = hdfs_output_path.replace(".tif", ".zarr")
+        hdfs_zarr_path = hdfs_output_path.replace(".tif", ".b_storage")
         worker_tmp = f"/tmp/tile_{payload['task_id']}.xml"
         gpt_bin = "/opt/snap/bin/gpt"
         

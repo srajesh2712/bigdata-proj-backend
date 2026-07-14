@@ -8,7 +8,6 @@ import numpy as np
 import rasterio
 
 from rasterio import MemoryFile
-from rasterio.enums import Resampling
 from rasterio.windows import Window
 from rasterio.warp import transform_bounds
 from rasterio.shutil import copy as rasterio_copy
@@ -25,9 +24,6 @@ def process_sar_tile(task_data):
     start_time = time.time()
 
     os.environ["HADOOP_USER_NAME"] = "root"
-
-    logger = logging.getLogger("worker")
-
     fs = fsspec.filesystem("hdfs", host="namenode", port=8020)
 
     win = Window(*win_coords)
@@ -50,13 +46,17 @@ def process_sar_tile(task_data):
     try:
         local_pre = f"/tmp/pre_{window_id}.tif"
         local_post = f"/tmp/post_{window_id}.tif"
+        download_start = time.time()
 
         pre, _, _, _ = read_local(pre_path, local_pre)
-        post, src_transform, src_crs, (left, bottom, right, top) = read_local(
+
+        post, src_transform, src_crs, _ = read_local(
             post_path,
             local_post
         )
 
+        download_time = time.time() - download_start
+        
         print(f"Tile {window_id}: Pre max={np.max(pre)}, Post max={np.max(post)}")
 
         # ----------------------------
@@ -76,9 +76,8 @@ def process_sar_tile(task_data):
                 "duration": round(time.time() - start_time, 2),
             }
 
-        # ----------------------------
-        # FLOOD DETECTION
-        # ----------------------------
+        compute_start = time.time()
+
         pre_db = 10 * np.log10(np.clip(pre, 1e-6, None).astype(np.float32))
         post_db = 10 * np.log10(np.clip(post, 1e-6, None).astype(np.float32))
 
@@ -86,6 +85,7 @@ def process_sar_tile(task_data):
 
         pixel_count = int(flood_mask.sum())
 
+        compute_time = time.time() - compute_start
         # ----------------------------
         # WRITE MASK (LOCAL)
         # ----------------------------
@@ -136,7 +136,12 @@ def process_sar_tile(task_data):
             right,
             top,
         )
-
+        
+        for f in [local_pre, local_post, local_out]:
+            try:
+                os.remove(f)
+            except OSError:
+                pass
         return {
             "tile_id": window_id,
             "pixel_count": pixel_count,
@@ -177,8 +182,8 @@ def main():
 
     print(client)
 
-    pre_p = "/user/btcchl0040/sar/processed/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE_20250803_163826.tif"
-    post_p = "/user/btcchl0040/sar/processed/S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE/S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE_20250803_163826.tif"
+    pre_p = "/user/btcchl0040/spark_preprocessed/7/43_tile.tif"
+    post_p = "/user/btcchl0040/spark_preprocessed/8/40_tile.tif"
 
     tasks = []
 

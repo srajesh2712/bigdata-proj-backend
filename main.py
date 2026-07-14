@@ -136,18 +136,17 @@ def preprocess_sar_files(target_job_ids):
     # Step 1: Query tasks exactly matching the logic within your Spark pipeline
     job_ids_str = ",".join(map(str, target_job_ids))
     fetch_query = f"""
-        SELECT t.task_id,
-                t.task_name,
-                t.region_wkt,
-                j.job_id,
-                s.scene_id,
-                '{BASE_PATH}/INPUT/' || s.local_path  AS local_path,
-                '{BASE_PATH}/INPUT/' || s.scene_name || '_task_' || t.task_id || '_output.tif' AS output_tiff,
-                '{BASE_PATH}/' || j.job_id || '/' || t.task_id || '_tile.tif' AS hdfs_output_path
-        FROM job_tasks t
-        JOIN processing_job j ON t.job_id = j.job_id
-        JOIN sar_scene_master s ON j.scene_id = s.scene_id
-        WHERE t.job_id IN ({job_ids_str}) AND t.task_status IN ('CREATED','QUEUED')
+        SELECT j.job_name,
+            j.region_wkt,
+            j.job_id,
+            s.scene_id,
+            '{BASE_PATH}/INPUT/' || s.scene_name  AS local_path,
+            '{BASE_PATH}/INPUT/' || s.scene_name || '_task_' || j.job_id || '_output.tif' AS output_tiff,
+            '{BASE_PATH}/' || j.job_id || '/' || j.job_id || '_tile.tif' AS hdfs_output_path
+                
+        FROM sar.processing_job j
+     JOIN sar.sar_scene_master s ON j.scene_id = s.scene_id
+     WHERE j.job_id IN ({job_ids_str}) AND j.job_status IN ('CREATED','QUEUED')
     """
 
     conn = engine.raw_connection()
@@ -162,7 +161,7 @@ def preprocess_sar_files(target_job_ids):
         # Step 2: Loop payloads sequentially
         for payload in records:
             start_dt = datetime.now()
-            temp_graph = os.path.join("/tmp", f"graph_{payload['task_id']}.xml")
+            temp_graph = os.path.join("/tmp", f"graph_{payload['job_id']}.xml")
 
             os.makedirs(os.path.dirname(payload['output_tiff']), exist_ok=True)
 
@@ -184,17 +183,17 @@ def preprocess_sar_files(target_job_ids):
 
                 # Step 3: Write artifacts matching Spark's structure
                 artifact_query = """
-                                 INSERT INTO processing_artifacts (job_id, task_id, scene_id, artifact_type, \
+                                 INSERT INTO processing_artifacts (task_id, scene_id, artifact_type, \
                                                                    file_format, \
                                                                    hdfs_path, local_path, file_size_bytes, start_time, \
                                                                    stop_time, \
                                                                    duration_seconds, region_wkt) \
-                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) \
+                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) \
                                  """
                 with conn.cursor() as cur:
                     cur.execute(artifact_query, (
+
                         payload['job_id'],
-                        payload['task_id'],
                         payload['scene_id'],
                         "PREPROCESSED_TILE",
                         "TIFF",
@@ -207,7 +206,7 @@ def preprocess_sar_files(target_job_ids):
                         payload['region_wkt']
                     ))
                 conn.commit()
-                print(f"✅ Task {payload['task_id']} (Job {payload['job_id']}): FINISHED & logged to artifacts.")
+                print(f"✅ Task  (Job {payload['job_id']}): FINISHED & logged to artifacts.")
 
             except Exception as task_err:
                 conn.rollback()
@@ -236,3 +235,11 @@ if __name__ == '__main__':
 
     print('Standalone starting', starttime)
     print('standalone stopping', stoptime)
+    fmt = "%Y%m%d_%H%M%S"
+
+    duration = (
+            datetime.strptime(stoptime, fmt) -
+            datetime.strptime(starttime, fmt)
+    ).total_seconds()
+
+    print(duration)

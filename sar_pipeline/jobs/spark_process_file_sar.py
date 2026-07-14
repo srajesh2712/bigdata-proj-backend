@@ -200,8 +200,8 @@ def main():
         print(f"DRIVER: Directory {mask_dir} already exists.")
 
 
-    pre_p = "/user/btcchl0040/sar/processed/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE_20250803_163826.tif"
-    post_p = "/user/btcchl0040/sar/processed/S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE/S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE_20250803_163826.tif"
+    pre_p = "/user/btcchl0040/spark_preprocessed/7/43_tile.tif"
+    post_p = "/user/btcchl0040/spark_preprocessed/8/40_tile.tif"
 
     verify_cog("/user/btcchl0040/sar/results/masks/tile_02_mask.tif")
     #time.sleep(1000)
@@ -238,4 +238,10 @@ def main():
 
 
 if __name__ == "__main__":
+    overall_start = time.time()
     main()
+    overall_duration = time.time() - overall_start
+
+    print("\n===================================")
+    print(f"Total end-to-end processing time : {overall_duration:.2f} seconds")
+    print("===================================\n")

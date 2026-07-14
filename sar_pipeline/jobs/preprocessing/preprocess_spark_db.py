@@ -80,7 +80,7 @@ def process_tiles_in_partition(records):
 
     for payload in records:
         starttime = datetime.now().strftime("%Y%m%d_%H%M%S")
-        temp_graph = os.path.join("/tmp", f"graph_{payload['task_id']}.xml")
+        temp_graph = os.path.join("/tmp", f"graph_{payload['job_id']}.xml")
         
         try:
             # Step 1: Update XML
@@ -125,7 +125,7 @@ def process_tiles_in_partition(records):
 
             # Append successful result record
             partition_results.append({
-                "task_id": payload['task_id'],
+                
                 "job_id": payload['job_id'],
                 "scene_id": payload['scene_id'],
                 "status": "FINISHED",
@@ -141,7 +141,6 @@ def process_tiles_in_partition(records):
 
         except Exception as e:
             partition_results.append({
-                "task_id": payload['task_id'],
                 "job_id": payload['job_id'],
                 "scene_id": payload['scene_id'],
                 "status": "ERROR",
@@ -161,18 +160,16 @@ def preprocess_sar_from_db(job_ids):
     job_ids_str = ",".join(map(str, job_ids))
     
     query = f"""
-    (SELECT t.task_id,
-            t.task_name,
-            t.region_wkt,
+    (SELECT j.job_name,
+            j.region_wkt,
             j.job_id,
             s.scene_id,
-            '{BASE_PATH}/INPUT/' || s.local_path  AS local_path,
-            '{BASE_PATH}/INPUT/' || s.scene_name || '_task_' || t.task_id || '_output.tif' AS output_tiff,
-            '{HDFS_BASE}/' || j.job_id || '/' || t.task_id || '_tile.tif' AS hdfs_output_path
-     FROM sar.job_tasks t
-     JOIN sar.processing_job j ON t.job_id = j.job_id
+            '{BASE_PATH}/INPUT/' || s.scene_name  AS local_path,
+            '{BASE_PATH}/INPUT/' || s.scene_name || '_task_' || j.job_id || '_output.tif' AS output_tiff,
+            '{HDFS_BASE}/' || j.job_id || '/' || j.job_id || '_tile.tif' AS hdfs_output_path
+     FROM sar.processing_job j
      JOIN sar.sar_scene_master s ON j.scene_id = s.scene_id
-     WHERE t.job_id IN ({job_ids_str}) AND t.task_status IN ('CREATED','QUEUED')
+     WHERE j.job_id IN ({job_ids_str}) AND j.job_status IN ('CREATED','QUEUED')
     ) as job_payload
     """
     payload_df = spark.read.jdbc(JDBC_URL, query, properties=DB_PROPERTIES)
@@ -191,10 +188,10 @@ def preprocess_sar_from_db(job_ids):
 
     for res in results:
         if res['status'] == "ERROR":
-            print(f"❌ Task {res['task_id']} (Job {res.get('job_id')}): FAILED")
+            print(f"❌ Task {res['job_id']} (Job {res.get('job_id')}): FAILED")
             print(f"   Reason: {res.get('msg')}")
         else:
-            print(f"✅ Task {res['task_id']} (Job {res.get('job_id')}): {res['status']} (Path: {res.get('hdfs_path')})")
+            print(f"✅ Task {res['job_id']} (Job {res.get('job_id')}): {res['status']} (Path: {res.get('hdfs_path')})")
             
     success_rows = [r for r in results if r['status'] == "FINISHED"]
     if success_rows:
@@ -202,7 +199,6 @@ def preprocess_sar_from_db(job_ids):
         
         artifact_df = raw_artifact_df.select(
             col("job_id").cast("long"),
-            col("task_id").cast("long"),
             col("scene_id").cast("long"),
             col("type").alias("artifact_type"),
             col("format").alias("file_format"),

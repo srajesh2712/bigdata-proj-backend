@@ -50,11 +50,8 @@ def process_tile(task):
         pre_store = open_zarr_hdfs(pre_path)
         post_store = open_zarr_hdfs(post_path)
 
-        pre_data = pre_store["band_data"][:]
-        post_data = post_store["band_data"][:]
-
-        pre = pre_data[0, y:y + h, x:x + w]
-        post = post_data[0, y:y + h, x:x + w]
+        pre = pre_store["band_data"][0, y:y + h, x:x + w]
+        post = post_store["band_data"][0, y:y + h, x:x + w]
 
         # empty tile check
         if np.max(pre) <= 0:
@@ -151,4 +148,10 @@ def main():
 
 
 if __name__ == "__main__":
+    overall_start = time.time()
     main()
+    overall_duration = time.time() - overall_start
+
+    print("\n===================================")
+    print(f"Total end-to-end processing time : {overall_duration:.2f} seconds")
+    print("===================================\n")

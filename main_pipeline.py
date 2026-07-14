@@ -1,19 +1,14 @@
-import random
-
-from sar_pipeline.analysis.create_flood_mask import create_flood_mask,create_mask
-from sar_pipeline.analysis.merge_flooded_tiles import merge_flooded_tiles
+from sar_pipeline.analysis.practice_files.create_flood_mask import create_flood_mask
 from sar_pipeline.db import fetch_processing_files, update_processing_files_by_jobid, insert_job
 from sar_pipeline.a_preprocessing.preprocess_standalone import preprocess_sar_files
-from sar_pipeline.a_preprocessing.split_geotiff_files import split_files
 from sqlalchemy import create_engine
 
 engine = create_engine("postgresql+psycopg2://rajesh:rajesh@localhost/eo")
 from sqlalchemy.orm import sessionmaker
 Session = sessionmaker(bind=engine)
 session = Session()
-from sar_pipeline.schema.schema import SafeFile, Base
 from datetime import datetime
-import os
+
 base_dir = '/home/btcchl0040/Documents/SAR_Data'
 
 if __name__ == '__main__':

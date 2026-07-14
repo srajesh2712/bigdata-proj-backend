@@ -1,0 +1,13 @@
+---
+config:
+  layout: dagre
+  look: classic
+  theme: redux
+---
+flowchart LR
+   STEP5[("HDFS<br>/preprocessed/")]
+    STEP5 --> STEP6["Processing Engine <br>Spark "] & STEP7["Processing Engine <br> Dask"]
+    STEP6 --> STEP8[("HDFS<br>/processed/")]
+    STEP7 --> STEP8
+    
+    

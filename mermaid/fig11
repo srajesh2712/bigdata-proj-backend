@@ -1,0 +1,11 @@
+flowchart LR
+ subgraph RIGHT[" "]
+    direction TB
+        B["Distributed preprocessing"]
+        A["EO Dataset<br>"]
+        C["Distributed Storage Formats"]
+        D["Distributed Processing"]
+  end
+    A --> B
+    B --> C
+    C --> D

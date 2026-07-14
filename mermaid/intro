@@ -1,0 +1,15 @@
+flowchart TB
+
+subgraph RIGHT["Overview"]
+direction TB
+
+A["EO Satellite Data<br>(Sentinel-1 GRD / SLC)"] 
+    --> B["Parallel Preprocessing<br>SNAP vs Spark vs Dask"]
+
+B --> C["Distributed Storage on HDFS<br>GeoTIFF vs Zarr"]
+
+C --> D["Distributed Analytics<br>Spark / Dask Processing"]
+
+D --> E["Outputs<br>Flood Maps, Time-Series Products,<br>ML-ready Features"]
+
+end

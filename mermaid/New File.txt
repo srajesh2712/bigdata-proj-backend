@@ -1,0 +1,53 @@
+flowchart TB
+ 
+ subgraph LEFT["Detailed Architecture (Methodology)"]
+    direction TB
+        P
+        B["Ingestion Layer<br>Download + Metadata Extraction"]
+        A["Sentinel-1 / EO Input Products<br>GRD / SLC / Bursts"]
+        C{"Preprocessing Engine"}
+        D["SNAP Standalone Workflow<br>gpt / Graph XML"]
+        E["Apache Spark Cluster<br>Parallel Preprocessing"]
+        F["Dask Cluster<br>Parallel Preprocessing"]
+        G["Preprocessed Outputs<br>Calibration, TC, Speckle Filter, Subset"]
+        H{"Storage Format on HDFS"}
+        I["GeoTIFF Storage<br>Tile-based Rasters"]
+        J["Zarr Storage<br>Chunked Multi-dimensional Arrays"]
+        K{"Distributed Processing Engine"}
+        L["Apache Spark Analytics<br>Sedona / SparkSQL / ML Pipelines"]
+        M["Dask Analytics<br>xarray / dask.array / ML Pipelines"]
+        N["EO Use Cases<br>Flood Mapping, Change Detection,<br>Time-Series Monitoring, InSAR Features"]
+        O["Actionable Outputs<br>COG, Vector Layers, Reports,<br>ML-ready Features, Dashboards"]
+  end
+ subgraph RIGHT["Overview"]
+    direction TB   
+        B2["Parallel Preprocessing<br>SNAP vs Spark vs Dask"]
+        A2["EO Satellite Data<br>(Sentinel-1 GRD / SLC)"]
+        C2["Distributed Storage on HDFS<br>GeoTIFF vs Zarr"]
+        D2["Distributed Analytics<br>Spark / Dask Processing"]
+        E2["Outputs<br>Flood Maps, Time-Series Products,<br>ML-ready Features"]
+  end
+    A --> B
+    B --> C
+    C -- Traditional --> D
+    C -- Distributed --> E & F
+    D --> G
+    E --> G
+    F --> G
+    G --> H
+    H -- Raster Files --> I
+    H -- Chunked Cube --> J
+    I --> K
+    J --> K
+    K -- Spark --> L
+    K -- Dask --> M
+    L --> N
+    M --> N
+    N --> O
+    C -.-> P1
+    H -.-> P2
+    K -.-> P3
+    A2 --> B2
+    B2 --> C2
+    C2 --> D2
+    D2 --> E2

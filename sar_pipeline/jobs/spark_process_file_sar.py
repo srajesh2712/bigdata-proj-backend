@@ -43,7 +43,7 @@ def process_sar_tile(task_data):
     print(' entering into process sar tile ')
     logger = logging.getLogger("worker")
     window_id, pre_path, post_path, win_coords = task_data
-
+    start_time = time.time()
     os.environ["HADOOP_USER_NAME"] = "root"
     os.environ["GDAL_HDFS_NAME_NODE"] = "namenode:8020"
     try:
@@ -76,10 +76,12 @@ def process_sar_tile(task_data):
         logger.info(f"Tile {window_id}: Pre-Max={np.max(pre)}, Post-Max={np.max(post)}")
         # IMPORTANT: Use the same dictionary structure for EMPTY_LAND
         if np.max(pre) <= 0:
+            duration = round(time.time() - start_time, 2)
             return {
                 "tile_id": window_id, "pixel_count": 0, "status": "EMPTY_LAND",
                 "mask_path": None, "min_lon": 0.0, "min_lat": 0.0,
-                "max_lon": 0.0, "max_lat": 0.0, "processed_at": time.strftime('%Y-%m-%d %H:%M:%S')
+                "max_lon": 0.0, "max_lat": 0.0, "processed_at": time.strftime('%Y-%m-%d %H:%M:%S'),
+                "duration":duration,
             }
 
         # --- LOG RATIO FLOOD LOGIC ---
@@ -141,6 +143,10 @@ def process_sar_tile(task_data):
         left_lon, bottom_lat, right_lon, top_lat = transform_bounds(src_crs, 'EPSG:4326', left, bottom, right, top)
 
         # Return a dictionary instead of a tuple for easier Spark DataFrame creation
+        duration = round(time.time() - start_time, 2)
+        logger.info(
+            f"Tile {window_id}: Completed in {duration:.2f} sec"
+        )
         return {
             "tile_id": window_id,
             "pixel_count": pixel_count,
@@ -150,17 +156,20 @@ def process_sar_tile(task_data):
             "min_lat": float(bottom_lat),
             "max_lon": float(right_lon),
             "max_lat": float(top_lat),
-            "processed_at": time.strftime('%Y-%m-%d %H:%M:%S')
+            "processed_at": time.strftime('%Y-%m-%d %H:%M:%S'),
+            "duration":duration,
         }
 
     except Exception as e:
+        duration = round(time.time() - start_time, 2)
         return {
             "tile_id": window_id,
             "pixel_count": 0,
             "status": f"ERROR: {str(e)}",
             "mask_path": None,
             "min_lon": 0.0, "min_lat": 0.0, "max_lon": 0.0, "max_lat": 0.0,
-            "processed_at": time.strftime('%Y-%m-%d %H:%M:%S')
+            "processed_at": time.strftime('%Y-%m-%d %H:%M:%S'),
+            "duration":duration,
         }
 
 
@@ -174,6 +183,7 @@ def main():
         StructField("min_lat", DoubleType(), True),
         StructField("max_lon", DoubleType(), True),
         StructField("max_lat", DoubleType(), True),
+        StructField("duration", DoubleType(), True),
         StructField("processed_at", StringType(), True)
     ])
 
@@ -190,41 +200,8 @@ def main():
         print(f"DRIVER: Directory {mask_dir} already exists.")
 
 
-    print(f"Catalog 'local' warehouse: {spark.conf.get('spark.sql.catalog.local.warehouse', 'NOT FOUND')}")
-    # Create the table if it doesn't exist
-    spark.sql("""
-              CREATE TABLE IF NOT EXISTS local.flood_db.sar_catalog
-              (
-                  tile_id
-                  INT,
-                  pixel_count
-                  INT,
-                  status
-                  STRING,
-                  mask_path
-                  STRING,
-                  min_lon
-                  DOUBLE,
-                  min_lat
-                  DOUBLE,
-                  max_lon
-                  DOUBLE,
-                  max_lat
-                  DOUBLE,
-                  processed_at
-                  TIMESTAMP
-              )
-                  USING iceberg
-                  PARTITIONED BY
-              (
-                  days
-              (
-                  processed_at
-              ))
-              """)
-
-    pre_p = "/user/btcchl0040/sar/processed/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE/S1A_IW_GRDH_1SDV_20250521T234717_20250521T234742_059299_075C07_507D.SAFE_20250803_163826.tif"
-    post_p = "/user/btcchl0040/sar/processed/S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE/S1A_IW_GRDH_1SDV_20250602T234717_20250602T234742_059474_076219_9E58.SAFE_20250803_163826.tif"
+    pre_p = "/user/btcchl0040/spark_preprocessed/7/43_tile.tif"
+    post_p = "/user/btcchl0040/spark_preprocessed/8/40_tile.tif"
 
     verify_cog("/user/btcchl0040/sar/results/masks/tile_02_mask.tif")
     #time.sleep(1000)
@@ -244,18 +221,6 @@ def main():
     results_df = results_df.withColumn("processed_at", to_timestamp(col("processed_at")))
 
     results_df.createOrReplaceTempView("new_batch")
-    # Use MERGE INTO to update the Iceberg table
-    spark.sql("""
-        MERGE INTO local.flood_db.sar_catalog t
-        USING new_batch s
-        ON t.tile_id = s.tile_id
-        WHEN MATCHED THEN 
-            UPDATE SET *
-        WHEN NOT MATCHED THEN 
-            INSERT *
-    """)
-
-    print("Iceberg Catalog Updated Successfully.")
     total = 0
     print("\n--- FLOOD RESULTS ---")
     # Tell sorted() to use the 'tile_id' key for sorting
@@ -273,4 +238,10 @@ def main():
 
 
 if __name__ == "__main__":
+    overall_start = time.time()
     main()
+    overall_duration = time.time() - overall_start
+
+    print("\n===================================")
+    print(f"Total end-to-end processing time : {overall_duration:.2f} seconds")
+    print("===================================\n")

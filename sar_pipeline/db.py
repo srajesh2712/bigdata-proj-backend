@@ -10,7 +10,8 @@ DB_PARAMS = {
     'user': 'rajesh',
     'password': 'rajesh',
     'host': 'localhost',
-    'port': '5432'
+    'port': '5432',
+    'options':'-csearch_path=sar',
 }
 
 def connect_db():
@@ -45,6 +46,7 @@ def update_processing_files_by_jobid(session,job_id, new_status='completed'):
     files_to_update = session.query(SafeFile).filter_by(id=job_id).all()
 
     for file in files_to_update:
+        print(f'updating {file}')
         file.status = new_status  # e.g., 'in_progress', 'completed', 'failed'
 
     session.commit()

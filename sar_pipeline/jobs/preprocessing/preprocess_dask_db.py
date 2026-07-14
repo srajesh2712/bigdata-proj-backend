@@ -6,7 +6,7 @@ import time
 import subprocess
 import xml.etree.ElementTree as ET
 from datetime import datetime
-from dask.distributed import Client
+from dask.distributed import Client, Semaphore  # Imported Semaphore
 import fsspec
 import psycopg2
 from psycopg2.extras import RealDictCursor, execute_values
@@ -35,7 +35,6 @@ def get_hdfs_dir_size(hdfs_path):
     try:
         time.sleep(1)
         fs = fsspec.filesystem("hdfs", host="namenode", port=8020, user=HADOOP_USER)
-        # find() returns all files in the directory tree
         files = fs.find(hdfs_path, detail=True)
         return sum(f['size'] for f in files.values())
     except Exception:
@@ -71,102 +70,99 @@ def update_snap_graph(xml_path, new_input_safe_path, new_geo_region, new_band_na
 def process_tile_worker(payload):
     """Executes inside the dask-worker container"""
     
-    
-    input_file = payload['local_input_path']
-    output_tiff = payload['local_output_path']
-    hdfs_output_path = payload['hdfs_output_path']
-    hdfs_zarr_path = hdfs_output_path.replace(".tif", ".zarr")
-    worker_tmp = f"/tmp/tile_{payload['task_id']}.xml"
-    gpt_bin = "/opt/snap/bin/gpt"
-    
-    try:
-        os.makedirs(os.path.dirname(output_tiff), exist_ok=True)
-
-        update_snap_graph(
-            xml_path=TEMPLATE_XML,
-            new_input_safe_path=input_file,
-            new_geo_region=payload['region_wkt'],
-            new_band_names="",
-            new_output_tiff_path=output_tiff,
-            output_path=worker_tmp
-        )
-
-        cmd = [
-            gpt_bin, worker_tmp,
-            "-c", "2G",
-            "-J-Xmx6G",
-            "-q","2",
-            "-Djava.awt.headless=true",
-            "-Dsnap.productlibrary.disable=true",
-            "-PexternalOrbitFile=none"
-        ]
-        start_time_raw = datetime.now()
-        start_time_str = start_time_raw.strftime("%Y%m%d_%H%M%S")
+    # Global cluster limit to process exactly 2 tiles at a time total
+    with Semaphore(max_leases=4, name="global_gpt_limit"):
+        input_file = payload['local_path']
+        output_tiff = payload['output_tiff']
+        hdfs_output_path = payload['hdfs_output_path']
+        hdfs_zarr_path = hdfs_output_path.replace(".tif", ".b_storage")
+        worker_tmp = f"/tmp/tile_{payload['job_id']}.xml"
+        gpt_bin = "/opt/snap/bin/gpt"
+        
         try:
-            subprocess.run(
-            cmd, 
-            stdout=subprocess.DEVNULL, 
-            stderr=subprocess.STDOUT, 
-            check=True
+            os.makedirs(os.path.dirname(output_tiff), exist_ok=True)
+
+            update_snap_graph(
+                xml_path=TEMPLATE_XML,
+                new_input_safe_path=input_file,
+                new_geo_region=payload['region_wkt'],
+                new_band_names="",
+                new_output_tiff_path=output_tiff,
+                output_path=worker_tmp
             )
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"GPT failed with code {e.returncode}")
-        
-        stop_time_raw = datetime.now()
-        file_size = os.path.getsize(output_tiff)
-        hdfs_written_path = write_to_hdfs(output_tiff, hdfs_output_path)
-        
-        fs = fsspec.filesystem("hdfs", host="namenode", port=8020, user=HADOOP_USER)
-        if not fs.exists(os.path.dirname(hdfs_zarr_path)):
-            fs.makedirs(os.path.dirname(hdfs_zarr_path))
+
+            # Fixed syntax typo: "Djava.awt.headless=true" -> "-Djava.awt.headless=true"
+            cmd = [
+                gpt_bin, worker_tmp,
+                "-e",
+                "-c", "2G",
+                "-J-Xmx6G",
+                "-q", "2",
+                "-J-Duser.home=/tmp",
+                "-Dsnap.jai.defaultTileSize=512",
+                "-Dsnap.dataio.reader.tileWidth=512",
+                "-Dsnap.dataio.reader.tileHeight=512",
+                "-Djava.awt.headless=true",
+                "-Dsnap.productlibrary.disable=true",
+                "-PexternalOrbitFile=none"
+            ]
+            start_time_raw = datetime.now()
+            start_time_str = start_time_raw.strftime("%Y%m%d_%H%M%S")
+            try:
+                subprocess.run(
+                    cmd, 
+                    stdout=subprocess.DEVNULL, 
+                    stderr=subprocess.STDOUT, 
+                    check=True
+                )
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"GPT failed with code {e.returncode}")
             
-        #converting to zarr
-        rds = rioxarray.open_rasterio(output_tiff, chunks={'x': 512, 'y': 512})
-        zarr_hdfs_url = f"hdfs://namenode:8020{hdfs_zarr_path}"
-        compressor = numcodecs.Blosc(cname="zstd", clevel=3, shuffle=numcodecs.Blosc.SHUFFLE)
+            stop_time_raw = datetime.now()
+            file_size = os.path.getsize(output_tiff)
+            hdfs_written_path = write_to_hdfs(output_tiff, hdfs_output_path)
+            
+            fs = fsspec.filesystem("hdfs", host="namenode", port=8020, user=HADOOP_USER)
+            if not fs.exists(os.path.dirname(hdfs_zarr_path)):
+                fs.makedirs(os.path.dirname(hdfs_zarr_path))
+                
+            tiff_size = os.path.getsize(output_tiff)
+            return {
+             
 
-        encoding = {rds.name: {"compressor": compressor}}
-
-        rds.to_zarr(            zarr_hdfs_url,            mode="w",            consolidated=True,                    )
-
-        zarr_size = 0 
-        #get_hdfs_dir_size(hdfs_zarr_path)
-        tiff_size = os.path.getsize(output_tiff)
-        return {
-            "task_id": payload['task_id'],
-            "job_id": payload['job_id'],
-            "scene_id": payload['scene_id'],
-            "status": "FINISHED",
-            "hdfs_path": hdfs_written_path,
-            "file_size": file_size,
-            "start_time": start_time_str,
-            "stop_time": stop_time_raw.strftime("%Y%m%d_%H%M%S"),
-            "duration": int((stop_time_raw - start_time_raw).total_seconds()),
-            "region_wkt":payload['region_wkt'],
-            "hdfs_zarr_path": hdfs_zarr_path,
-            "tiff_size": tiff_size,
-            "zarr_size": zarr_size,
-        }
-    except Exception as e:
-        return {
-            "task_id": payload['task_id'], 
-            "status": "ERROR", 
-            "msg": str(e),
-            "trace": traceback.format_exc()
-        }
+                "job_id": payload['job_id'],
+                "scene_id": payload['scene_id'],
+                "status": "FINISHED",
+                "hdfs_path": hdfs_written_path,
+                "file_size": file_size,
+                "start_time": start_time_str,
+                "stop_time": stop_time_raw.strftime("%Y%m%d_%H%M%S"),
+                "duration": int((stop_time_raw - start_time_raw).total_seconds()),
+                "region_wkt": payload['region_wkt'],
+                "tiff_size": tiff_size,
+            }
+        except Exception as e:
+            return {
+              
+                "status": "ERROR", 
+                "msg": str(e),
+                "trace": traceback.format_exc()
+            }
 
 def fetch_tasks_from_db(job_id):
     conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor(cursor_factory=RealDictCursor)
     query = f"""
-        SELECT t.task_id, t.region_wkt, j.job_id, s.scene_id,
-               '{BASE_PATH}/INPUT/' || s.local_path AS local_input_path,
-               '{BASE_PATH}/' || j.job_id || '/PREPROCESSING/' || t.task_id || '.tif' AS local_output_path,
-               '{HDFS_BASE}/' || j.job_id || '/' || t.task_id || '_tile.tif' AS hdfs_output_path
-        FROM sar.job_tasks t
-        JOIN sar.processing_job j ON t.job_id = j.job_id
-        JOIN sar.sar_scene_master s ON j.scene_id = s.scene_id
-        WHERE t.job_id = ANY(%s) AND t.task_status IN ('CREATED','QUEUED');
+        SELECT j.job_name,
+            j.region_wkt,
+            j.job_id,
+            s.scene_id,
+            '{BASE_PATH}/INPUT/' || s.scene_name  AS local_path,
+            '{BASE_PATH}/INPUT/' || s.scene_name || '_task_' || j.job_id || '_output.tif' AS output_tiff,
+            '{HDFS_BASE}/' || j.job_id || '/' || j.job_id || '_tile.tif' AS hdfs_output_path
+     FROM sar.processing_job j
+     JOIN sar.sar_scene_master s ON j.scene_id = s.scene_id
+     WHERE j.job_id = ANY(%s) AND j.job_status IN ('CREATED','QUEUED')
     """
     cur.execute(query, (job_id,))
     tasks = cur.fetchall()
@@ -177,7 +173,7 @@ def fetch_tasks_from_db(job_id):
 # --- Main Entry Point ---
 
 if __name__ == "__main__":
-    JOB_ID = [6,5]
+    JOB_ID = [1,2,3,4]
     
     tiles_to_process = fetch_tasks_from_db(JOB_ID)
     if not tiles_to_process:
@@ -187,6 +183,7 @@ if __name__ == "__main__":
     client = Client('dask-scheduler:8786')
     print(f"Connected to Dask. Processing {len(tiles_to_process)} tiles.")
 
+    # Removed resources tag so it processes on any available normal worker threads
     futures = client.map(process_tile_worker, tiles_to_process)
     results = client.gather(futures)
 
@@ -196,11 +193,11 @@ if __name__ == "__main__":
 
     for r in results:
         if r['status'] == "FINISHED":
-            print(f"✅ Task {r['task_id']} finished in {r['duration']}s. {r}")
-            finished_task_ids.append(r['task_id'])
+            print(f"✅ Task {r['job_id']} finished in {r['duration']}s. {r}")
+            finished_task_ids.append(r['job_id'])
             success_data.append((
+               
                 r['job_id'],
-                r['task_id'],
                 r['scene_id'],
                 "PREPROCESSED_TILE",
                 "TIFF",
@@ -224,14 +221,17 @@ if __name__ == "__main__":
             # Insert artifacts
             insert_query = """
                 INSERT INTO sar.processing_artifacts (
-                    job_id, task_id, scene_id, artifact_type, file_format, 
-                    hdfs_path, local_path, file_size_bytes, start_time, stop_time, duration_seconds,region_wkt
+                    job_id,  scene_id, artifact_type, file_format, 
+                    hdfs_path, local_path, file_size_bytes, start_time, stop_time, duration_seconds, region_wkt
                 ) VALUES %s
             """
             execute_values(cur, insert_query, success_data)
             
             # Update task status so they aren't picked up again
-            cur.execute("UPDATE sar.job_tasks SET task_status = 'FINISHED' WHERE task_id IN %s", (tuple(finished_task_ids),))
+            if len(finished_task_ids) == 1:
+                cur.execute("UPDATE sar.processing_job SET job_status = 'FINISHED' WHERE job_id = %s", (finished_task_ids[0],))
+            else:
+                cur.execute("UPDATE sar.processing_job SET job_status = 'FINISHED' WHERE job_id IN %s", (tuple(finished_task_ids),))
             
             conn.commit()
             print(f"✅ Logged {len(success_data)} artifacts and updated task statuses.")

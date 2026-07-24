@@ -1,10 +1,13 @@
-# REMOVED fetch_processing_files since we are syncing with the Job ID workflow
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import os
+from datetime import datetime
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+import psutil
+from dotenv import load_dotenv
 
-# Updated to use search_path mapping
 engine = create_engine(
     "postgresql+psycopg2://rajesh:rajesh@localhost/eo",
     connect_args={"options": "-csearch_path=sar"}
@@ -13,18 +16,8 @@ Session = sessionmaker(bind=engine)
 session = Session()
 
 
-from datetime import datetime
-import subprocess
-import sys
-import xml.etree.ElementTree as ET
-import psutil
+load_dotenv() # load env file
 
-
-from dotenv import load_dotenv
-
-load_dotenv()
-
-# Configuration variables synchronized from Spark variables
 BASE_PATH = os.getenv('BASE_PATH')
 graph_xml_path = os.getenv('TEMPLATE_PATH')
 graph_xml = os.path.join(graph_xml_path, os.getenv('GRAPH_FILE_NAME'))
@@ -33,6 +26,11 @@ graph_xml = os.path.join(graph_xml_path, os.getenv('GRAPH_FILE_NAME'))
 def update_snap_graph(xml_path, new_input_safe_path, new_geo_region, new_band_names, new_output_tiff_path, output_path):
     tree = ET.parse(xml_path)
     root = tree.getroot()
+    ''' 
+    The below function will go over the
+     nodes -> parameters and set the value with the new value that comes in 
+    '''
+
 
     def find_node_param(node_id, param_name):
         for node in root.findall(".//node"):
@@ -62,9 +60,9 @@ def run_snap_graph(graph_path, output_file):
     gpt_command = "/opt/snap/bin/gpt"
     command = [
         "gpt", graph_path,
-        "-c", "2G",
-        "-J-Xmx6G",
-        "-q", "2",
+        "-c", "2G", # cache size
+        "-J-Xmx6G", # jvm param - maximum heap memory
+        "-q", "2", # default parallel thread
         "-J-Duser.home=/tmp",
         "-Dsnap.jai.defaultTileSize=512",
         "-Dsnap.dataio.reader.tileWidth=512",
@@ -75,27 +73,27 @@ def run_snap_graph(graph_path, output_file):
     ]
 
     print(f"\n Running SNAP GPT with command:\n{' '.join(command)}\n")
-
+    # below code will open separate operating system process
     try:
         process = subprocess.Popen(
             command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
+            stdout=subprocess.PIPE, # capture the output so that python program can read this
+            stderr=subprocess.STDOUT, # capture the error for the program to read this
+            text=True, # decode the output from byte into plain text
+            bufsize=1 # buffer the output so that it can be read
         )
 
-        proc_monitor = psutil.Process(process.pid)
+        proc_monitor = psutil.Process(process.pid) # get the process for monitoring
         peak_cpu = 0
         peak_mem = 0
 
-        while process.poll() is None:
+        while process.poll() is None: # Continue monitoring while the SNAP process is running and get the status , 0 if exited
             try:
                 cpu = proc_monitor.cpu_percent(interval=0.1)
                 mem = proc_monitor.memory_info().rss / (1024 * 1024)
                 peak_cpu = max(peak_cpu, cpu)
                 peak_mem = max(peak_mem, mem)
-            except psutil.NoSuchProcess:
+            except psutil.NoSuchProcess: # handle if SNAP suddenly terminates or is killed before psutil can read
                 break
 
             line = process.stdout.readline()
@@ -121,10 +119,9 @@ def run_snap_graph(graph_path, output_file):
 
 def preprocess_sar_files(target_job_ids):
     """
-    Fetches tasks exactly like the Spark code based on a target list of Job IDs,
+    Fetches tasks  based on a target list of Job IDs,
     processes them, and logs entries directly into sar.processing_artifacts.
     """
-    #log_id, start = insert_start_time('SAR_PREPROCESSING')
     start =  datetime.now().strftime("%Y%m%d_%H%M%S")
     print(f"Started execution loop at {start}")
 

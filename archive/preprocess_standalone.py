@@ -1,4 +1,3 @@
-from datetime import datetime
 import subprocess
 import os
 import time
@@ -8,8 +7,8 @@ from sqlalchemy import create_engine
 import psutil
 from sqlalchemy.orm import sessionmaker
 
-from sar_pipeline.db import insert_start_time, update_end_time
-from sar_pipeline.schema.schema import SafeFile, Base
+from archive.db import insert_start_time, update_end_time
+from archive.schema.schema import Base
 from dotenv import load_dotenv
 
 load_dotenv()

@@ -2,7 +2,7 @@ import psycopg2
 from datetime import datetime
 
 
-from sar_pipeline.schema.schema import SafeFile
+from archive.schema.schema import SafeFile
 
 # Update these as per your local setup
 DB_PARAMS = {

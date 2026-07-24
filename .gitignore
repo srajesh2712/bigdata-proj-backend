@@ -2,10 +2,10 @@ __pycache__/
 idea/
 .idea/misc.xml
 .idea/
-sar_pipeline/a_preprocessing/E:/
+archive/a_preprocessing/E:/
 updated_graph.xml
-sar_pipeline/a_preprocessing/updated_graph.xml
-sar_pipeline/visualization/visualization_output.png
+archive/a_preprocessing/updated_graph.xml
+archive/visualization/visualization_output.png
 .png
 *.png
 *.tif* 

@@ -2,7 +2,7 @@ import rasterio
 from rasterio.windows import Window
 import os
 from datetime import datetime
-from sar_pipeline.db import insert_start_time, update_end_time
+from archive.db import insert_start_time, update_end_time
 
 
 def split_files(input_tif,output_dir):

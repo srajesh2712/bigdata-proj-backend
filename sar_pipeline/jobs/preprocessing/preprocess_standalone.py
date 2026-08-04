@@ -7,6 +7,8 @@ import sys
 import xml.etree.ElementTree as ET
 import psutil
 from dotenv import load_dotenv
+import rioxarray
+import xarray as xr
 
 engine = create_engine(
     "postgresql+psycopg2://rajesh:rajesh@localhost/eo",
@@ -169,6 +171,9 @@ def preprocess_sar_files(target_job_ids):
 
                 run_snap_graph(temp_graph, payload['output_tiff'])
 
+                zarr_output_path = convert_geotiff_to_zarr(
+                    payload['output_tiff']
+                )
                 file_size = os.path.getsize(payload['output_tiff'])
                 stop_dt = datetime.now()
                 duration = int((stop_dt - start_dt).total_seconds())
@@ -202,7 +207,10 @@ def preprocess_sar_files(target_job_ids):
 
             except Exception as task_err:
                 conn.rollback()
-                print(f"❌ Task {payload['task_id']} (Job {payload['job_id']}): FAILED")
+
+                print(
+                    f"❌ Task (Job {payload['job_id']}): FAILED"
+                )
                 print(f"   Reason: {str(task_err)}")
 
     finally:
@@ -210,10 +218,60 @@ def preprocess_sar_files(target_job_ids):
         end =  datetime.now().strftime("%Y%m%d_%H%M%S")
         print(f"Ended pipeline loop execution sequence at {end}")
 
+def convert_geotiff_to_zarr(geotiff_path):
+    """
+    Convert GeoTIFF to chunked Zarr format.
+
+    Example:
+        input:
+            /data/scene_output.tif
+
+        output:
+            /data/scene_output.zarr/
+    """
+
+    if not os.path.isfile(geotiff_path):
+        raise FileNotFoundError(
+            f"GeoTIFF file not found: {geotiff_path}"
+        )
+
+    zarr_path = os.path.splitext(geotiff_path)[0] + ".zarr"
+
+    print(f"\n🔄 Converting GeoTIFF to Zarr")
+    print(f"Input : {geotiff_path}")
+    print(f"Output: {zarr_path}")
+
+    # Open GeoTIFF lazily using Dask chunks
+    raster = rioxarray.open_rasterio(
+        geotiff_path,
+        chunks={
+            "x": 512,
+            "y": 512
+        }
+    )
+
+    # Convert DataArray to Dataset
+    dataset = raster.to_dataset(name="sar_data")
+
+    # Store CRS information
+    dataset = dataset.rio.write_crs(raster.rio.crs)
+
+    # Write chunked Zarr
+    dataset.to_zarr(
+        zarr_path,
+        mode="w"
+    )
+
+    # Close resources
+    raster.close()
+
+    print(f"✅ Zarr conversion completed successfully")
+
+    return zarr_path
 
 if __name__ == '__main__':
     # Define the target job IDs you want to sync from your tracking metrics
-    TARGET_JOBS = [8, 7, 6, 5]
+    TARGET_JOBS = [9,10,11,12]
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 

@@ -72,18 +72,22 @@ def convert_hdfs_tiff_to_zarr(hdfs_tiff_path):
 
     try:
 
-        # Read TIFF from HDFS
-        f = fs.open(hdfs_tiff_path, "rb")
+        with fs.open(hdfs_tiff_path, "rb") as f:
 
-        da = rioxarray.open_rasterio(f)
+            da = rioxarray.open_rasterio(f)
 
-        da = da.load()
+            # Force loading before closing HDFS stream
+            da.load()
 
-        f.close()
-        da = da.drop_vars("spatial_ref", errors="ignore")
+        # Preserve CRS and transform
+        da = da.rio.write_crs(da.rio.crs)
+        da = da.rio.write_transform()
 
-        # Write local Zarr
-        da.to_dataset(name="band_data").to_zarr(
+        ds = da.to_dataset(
+            name="band_data"
+        )
+
+        ds.to_zarr(
             local_zarr_path,
             mode="w",
             consolidated=False
@@ -285,7 +289,7 @@ if __name__ == "__main__":
 
     for r in results:
         if r['status'] == "FINISHED":
-            print(f"✅ Task {r['job_id']} finished in {r['duration']}s. {r}")
+            print(f"✅ Task {r['job_id']} finished in {r['preprocessing_seconds']}s. {r}")
             finished_task_ids.append(r['job_id'])
             success_data.append((
                

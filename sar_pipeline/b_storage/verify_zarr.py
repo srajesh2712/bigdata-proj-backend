@@ -1,38 +1,36 @@
-import xarray as xr
+import os
 import fsspec
+import xarray as xr
+import rioxarray
+
+HADOOP_USER = "btcchl0040"
+os.environ["HADOOP_USER_NAME"] = HADOOP_USER
 
 fs = fsspec.filesystem(
     "hdfs",
     host="namenode",
-    port=8020
+    port=8020,
+    user=HADOOP_USER
 )
 
-mapper = fs.get_mapper(
-    "/user/btcchl0040/spark_preprocessed/7/43_tile.zarr"
+zarr_path = "/user/btcchl0040/dask_preprocessed/31/31_tile.zarr"
+
+ds = xr.open_zarr(
+    fs.get_mapper(zarr_path),
+    consolidated=False
 )
 
-ds = xr.open_zarr(mapper)
+ds = ds.rio.write_crs(
+    ds.spatial_ref.attrs["crs_wkt"],
+    inplace=False
+)
 
-print("\n===== DATASET =====")
+print(ds.band_data.rio.crs)
 print(ds)
 
-print("\n===== DATASET ATTRS =====")
-print(ds.attrs)
+print("\nSpatial Reference Metadata:")
+print(ds.spatial_ref.attrs)
 
-print("\n===== VARIABLE ATTRS =====")
-print(ds.band_data.attrs)
 
-try:
-    print(ds.x.values[0])
-    print(ds.x.values[1])
-
-    print(ds.y.values[0])
-    print(ds.y.values[1])
-    print("\n===== CRS =====")
-    print(ds.band_data.rio.crs)
-
-    print("\n===== TRANSFORM =====")
-    print(ds.band_data.rio.transform())
-
-except Exception as e:
-    print("RIO ERROR:", e)
+print("\nCRS from rioxarray:")
+print(ds.band_data.rio.crs)

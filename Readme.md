@@ -1,4 +1,4 @@
-Demonstration 
+# Demonstration 
 
 # Scenes Taken 
 4 - S1A_IW_GRDH_1SDV_20260115T063007_20260115T063032_062774_07DF6F_44A0.SAFE
@@ -6,7 +6,18 @@ Demonstration
 5 - S1A_IW_GRDH_1SDV_20260208T063005_20260208T063030_063124_07EC55_119E.SAFE
 7 - S1A_IW_GRDH_1SDV_20260220T063005_20260220T063030_063299_07F2DE_E43B.SAFE
 
-AOI  Sorted by largest to smallest 
+# Querries 
+
+## Reset data 
+update sar.processing_job set job_status = 'CANCELLED' where job_status = 'CREATED';
+
+SELECT * FROM sar.sar_scene_master ORDER BY scene_id ASC ;
+select * from sar.processing_job order by job_id desc limit 20 ;
+select * from sar.processing_artifacts order by artifact_id limit 10;
+
+
+
+## AOI  Sorted by largest to smallest 
 -- Inserting records into the processing_job table for the AOIs
 
 POLYGON((
@@ -46,6 +57,8 @@ INSERT INTO sar.processing_job (job_name, engine, pipeline_type, job_status, sce
 INSERT INTO sar.processing_job (job_name, engine, pipeline_type, job_status, scene_id, region_wkt) VALUES ( 'Jan 2026 GRD Preprocess - Scotland Tile 3', 'DASK', 'PREPROCESS', 'CREATED', 4, 'POLYGON((-3.50 56.50,-3.40 56.50,-3.40 56.60,-3.50 56.60,-3.50 56.50))');
 
 
+## check file size in hdfs 
+hdfs du -sh hdfs://namenode:8020/user/btcchl0040/spark_preprocessed/25/25_tile.zarr
 
 
 

@@ -19,15 +19,16 @@ export CLASSPATH=$($HADOOP_HOME/bin/hadoop classpath --glob)
 export HADOOP_USER_NAME=btcchl0040
 
 
-# main program 
+# Preprocessing 
+## pysnap 
 python main.py 
 
-# Spark based - command to execute 
+## Spark based - command to execute 
 
 docker exec -it  spark-submit bash -c " /opt/spark/bin/spark-submit --jars /opt/spark-jars/postgresql-42.6.0.jar   --master spark://spark-master:7077   --driver-memory 1G   --executor-memory 6G   --executor-cores 2   /opt/spark-jobs/preprocessing/preprocess_spark_db.py" 
 
 
-# Dask based 
+## Dask based 
 
 docker exec -it dask-client python /opt/spark-jobs/preprocessing/preprocess_dask_db.py
 

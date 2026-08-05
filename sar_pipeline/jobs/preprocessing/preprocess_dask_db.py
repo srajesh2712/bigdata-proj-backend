@@ -49,6 +49,58 @@ def write_to_hdfs(local_file_path, hdfs_target_path):
     fs.put(local_file_path, hdfs_target_path)
     return hdfs_target_path
 
+import tempfile
+import shutil
+import dask
+
+
+dask.config.set(scheduler="synchronous")
+
+
+def convert_hdfs_tiff_to_zarr(hdfs_tiff_path):
+
+    fs = fsspec.filesystem(
+        "hdfs",
+        host="namenode",
+        port=8020,
+        user=HADOOP_USER
+    )
+
+    hdfs_zarr_path = hdfs_tiff_path.replace(".tif", ".zarr")
+
+    local_zarr_path = tempfile.mkdtemp(prefix="zarr_")
+
+    try:
+
+        # Read TIFF from HDFS
+        f = fs.open(hdfs_tiff_path, "rb")
+
+        da = rioxarray.open_rasterio(f)
+
+        da = da.load()
+
+        f.close()
+        da = da.drop_vars("spatial_ref", errors="ignore")
+
+        # Write local Zarr
+        da.to_dataset(name="band_data").to_zarr(
+            local_zarr_path,
+            mode="w",
+            consolidated=False
+        )
+
+        # Upload Zarr directory to HDFS
+        fs.put(
+            local_zarr_path,
+            hdfs_zarr_path,
+            recursive=True
+        )
+
+        return hdfs_zarr_path
+
+    finally:
+        shutil.rmtree(local_zarr_path, ignore_errors=True)
+
 def update_snap_graph(xml_path, new_input_safe_path, new_geo_region, new_band_names, new_output_tiff_path, output_path):
     tree = ET.parse(xml_path)
     root = tree.getroot()
@@ -106,8 +158,12 @@ def process_tile_worker(payload):
                 "-Dsnap.productlibrary.disable=true",
                 "-PexternalOrbitFile=none"
             ]
-            start_time_raw = datetime.now()
-            start_time_str = start_time_raw.strftime("%Y%m%d_%H%M%S")
+            pipeline_start = datetime.now()
+
+            # -----------------------------
+            # Stage 1: SNAP preprocessing
+            # -----------------------------
+            preprocess_start = datetime.now()
             try:
                 subprocess.run(
                     cmd, 
@@ -117,11 +173,46 @@ def process_tile_worker(payload):
                 )
             except subprocess.CalledProcessError as e:
                 raise RuntimeError(f"GPT failed with code {e.returncode}")
-            
-            stop_time_raw = datetime.now()
+
+            preprocess_end = datetime.now()
+
+            preprocessing_seconds = (
+                    preprocess_end - preprocess_start
+            ).total_seconds()
+
             file_size = os.path.getsize(output_tiff)
+            hdfs_upload_start = datetime.now()
             hdfs_written_path = write_to_hdfs(output_tiff, hdfs_output_path)
-            
+            hdfs_upload_end = datetime.now()
+
+            hdfs_upload_seconds = (
+                    hdfs_upload_end - hdfs_upload_start
+            ).total_seconds()
+
+            # -----------------------------
+            # Stage 3: Zarr conversion
+            # -----------------------------
+            zarr_start = datetime.now()
+
+            hdfs_zarr_path = convert_hdfs_tiff_to_zarr(
+                hdfs_written_path
+            )
+
+            zarr_end = datetime.now()
+
+            zarr_conversion_seconds = (
+                    zarr_end - zarr_start
+            ).total_seconds()
+
+            # -----------------------------
+            # Total pipeline time
+            # -----------------------------
+            pipeline_end = datetime.now()
+
+            pipeline_seconds = (
+                    pipeline_end - pipeline_start
+            ).total_seconds()
+
             fs = fsspec.filesystem("hdfs", host="namenode", port=8020, user=HADOOP_USER)
             if not fs.exists(os.path.dirname(hdfs_zarr_path)):
                 fs.makedirs(os.path.dirname(hdfs_zarr_path))
@@ -135,9 +226,10 @@ def process_tile_worker(payload):
                 "status": "FINISHED",
                 "hdfs_path": hdfs_written_path,
                 "file_size": file_size,
-                "start_time": start_time_str,
-                "stop_time": stop_time_raw.strftime("%Y%m%d_%H%M%S"),
-                "duration": int((stop_time_raw - start_time_raw).total_seconds()),
+                "preprocessing_seconds": preprocessing_seconds,
+                "hdfs_upload_seconds": hdfs_upload_seconds,
+                "zarr_conversion_seconds": zarr_conversion_seconds,
+                "pipeline_seconds": pipeline_seconds,
                 "region_wkt": payload['region_wkt'],
                 "tiff_size": tiff_size,
             }
@@ -148,8 +240,8 @@ def process_tile_worker(payload):
                 "msg": str(e),
                 "trace": traceback.format_exc()
             }
-
-def fetch_tasks_from_db(job_id):
+# j.job_id = ANY(%s)
+def fetch_tasks_from_db():
     conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor(cursor_factory=RealDictCursor)
     query = f"""
@@ -162,9 +254,9 @@ def fetch_tasks_from_db(job_id):
             '{HDFS_BASE}/' || j.job_id || '/' || j.job_id || '_tile.tif' AS hdfs_output_path
      FROM sar.processing_job j
      JOIN sar.sar_scene_master s ON j.scene_id = s.scene_id
-     WHERE j.job_id = ANY(%s) AND j.job_status IN ('CREATED','QUEUED')
+     WHERE j.job_status IN ('CREATED','QUEUED') AND j.engine = 'DASK'
     """
-    cur.execute(query, (job_id,))
+    cur.execute(query)
     tasks = cur.fetchall()
     cur.close()
     conn.close()
@@ -173,11 +265,11 @@ def fetch_tasks_from_db(job_id):
 # --- Main Entry Point ---
 
 if __name__ == "__main__":
-    JOB_ID = [1,2,3,4]
+    #JOB_ID = [1,2,3,4]
     
-    tiles_to_process = fetch_tasks_from_db(JOB_ID)
+    tiles_to_process = fetch_tasks_from_db()
     if not tiles_to_process:
-        print(f"No pending tasks found for Job {JOB_ID}. Exiting.")
+        print(f"No pending tasks found for Job . Exiting.")
         exit()
 
     client = Client('dask-scheduler:8786')
@@ -204,13 +296,15 @@ if __name__ == "__main__":
                 r['hdfs_path'],
                 "DASK",
                 r['file_size'],
-                datetime.strptime(r['start_time'], "%Y%m%d_%H%M%S"),
-                datetime.strptime(r['stop_time'], "%Y%m%d_%H%M%S"),
-                r['duration'],
+                r['preprocessing_seconds'],
+                r['hdfs_upload_seconds'],
+                r['zarr_conversion_seconds'],
+                r['pipeline_seconds'],
                 r['region_wkt']
             ))
         else:
-            print(f"❌ Task {r['task_id']} failed: {r.get('msg')}")
+            print(f"❌ Task failed: {r.get('msg')}")
+            print(r.get('trace'))
 
     # 5. DB Logging
     if success_data:
@@ -222,8 +316,7 @@ if __name__ == "__main__":
             insert_query = """
                 INSERT INTO sar.processing_artifacts (
                     job_id,  scene_id, artifact_type, file_format, 
-                    hdfs_path, local_path, file_size_bytes, start_time, stop_time, duration_seconds, region_wkt
-                ) VALUES %s
+                    hdfs_path, local_path, file_size_bytes,preprocessing_seconds, hdfs_upload_seconds, zarr_conversion_seconds, pipeline_seconds, region_wkt ) VALUES %s
             """
             execute_values(cur, insert_query, success_data)
             

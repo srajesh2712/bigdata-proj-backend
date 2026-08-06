@@ -9,7 +9,7 @@ import zarr
 
 # --- CONFIGURATION ---
 input_tif = "data/S1A_IW_GRDH_1SDV_20260115T063007_20260115T063032_062774_07DF6F_44A0.SAFE_9.tif"
-output_zarr = "test_sar.b_storage"
+output_zarr = "test_sar.storage"
 
 N_RANDOM_READS = 200
 N_WINDOW_READS = 50

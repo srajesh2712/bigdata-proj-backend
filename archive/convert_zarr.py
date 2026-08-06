@@ -7,7 +7,7 @@ dask.config.set(scheduler="synchronous")
 
 def convert_hdfs_tiff_to_zarr(hdfs_tiff_path):
 
-    local_zarr_path = "/tmp/43_tile.b_storage"
+    local_zarr_path = "/tmp/43_tile.storage"
 
     fs = fsspec.filesystem("hdfs", host="localhost", port=8020)
 

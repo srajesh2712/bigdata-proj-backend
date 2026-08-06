@@ -19,20 +19,17 @@ from rasterio.shutil import copy as rasterio_copy
 def process_sar_tile(task_data):
 
     print("entering process_sar_tile")
-
     window_id, pre_path, post_path, win_coords = task_data
     start_time = time.time()
-
     os.environ["HADOOP_USER_NAME"] = "root"
     fs = fsspec.filesystem("hdfs", host="namenode", port=8020)
-
     win = Window(*win_coords)
 
-    # ----------------------------
-    # SAFE HDFS → LOCAL READ
-    # ----------------------------
     def read_local(path, local_path):
-
+        """
+            Downloads a file from HDFS to a local path and reads
+            the specified raster window using Rasterio.
+            """
         fs.get(path, local_path)
 
         with rasterio.open(local_path) as src:

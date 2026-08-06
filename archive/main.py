@@ -13,7 +13,7 @@ rds = rioxarray.open_rasterio(file_path, chunks={'x': 512, 'y': 512})
 # 2️⃣ Convert to Zarr (with compression)
 # ------------------------
 start_time = time.time()
-zarr_path = "sar_data.b_storage"
+zarr_path = "sar_data.storage"
 
 # 'Blosc' with 'zstd' is good for SAR data
 rds.to_zarr(zarr_path, mode='w', consolidated=True)

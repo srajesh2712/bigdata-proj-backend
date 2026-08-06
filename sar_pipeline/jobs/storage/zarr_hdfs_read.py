@@ -7,7 +7,7 @@ import numpy as np
 HADOOP_USER = "btcchl0040"
 HDFS_NAMENODE = "namenode"
 HDFS_PORT = 8020
-HDFS_ZARR_PATH = "/user/btcchl0040/dask_preprocessed/1/13_tile.b_storage"
+HDFS_ZARR_PATH = "/user/btcchl0040/dask_preprocessed/1/13_tile.storage"
 
 os.environ["HADOOP_USER_NAME"] = HADOOP_USER
 

@@ -22,9 +22,9 @@ from pyspark.sql.types import (
 from pyspark import TaskContext
 
 
-# ============================================================
+
 # CONFIGURATION
-# ============================================================
+
 
 HDFS_HOST = "namenode"
 HDFS_PORT = 8020
@@ -173,7 +173,7 @@ def process_sar_tile(task_data):
 
                     transform = (
                         src.window_transform(window)
-                    )
+                    ) # contains the affine transform
 
                     crs = src.crs
 
@@ -734,17 +734,7 @@ def main():
     results_df.show(
         truncate=False
     )
-
-    # --------------------------------------------------------
-    # CLOSE SPARK
-    # --------------------------------------------------------
-
     spark.stop()
-
-    # --------------------------------------------------------
-    # END-TO-END TIME
-    # --------------------------------------------------------
-
     overall_duration = (
         time.time() - overall_start
     )

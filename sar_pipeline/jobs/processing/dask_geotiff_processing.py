@@ -108,54 +108,33 @@ def process_tile(task):
 
         diff = post_db - pre_db
 
-        flood_mask = (diff < -5.5).astype(np.uint8)
+        flood_mask = (diff < -5.5).astype(np.uint8) # This is the condition i am using to determine a pixel as flood
 
         pixel_count = int(flood_mask.sum())
 
         # RESULT
 
         return {
-
             "tile_id": tile_id,
-
             "pixel_count": pixel_count,
-
             "status": "SUCCESS",
-
             "duration": round(time.time() - start, 2),
-
             "worker": worker_id,
-
             "worker_name": worker_name,
-
             "processed_at": datetime.utcnow().isoformat(),
-
             "pre_shape": pre_shape,
-
             "post_shape": post_shape,
-
         }
 
     except Exception as e:
-
-        # ERROR
-
         return {
-
             "tile_id": tile_id,
-
             "pixel_count": 0,
-
             "status": f"ERROR : {e}",
-
             "duration": round(time.time() - start, 2),
-
             "worker": None,
-
             "worker_name": None,
-
             "processed_at": datetime.utcnow().isoformat(),
-
         }
 
 
@@ -163,75 +142,49 @@ def process_tile(task):
 
 def main():
     print("Starting Dask GeoTIFF processing...")
-
     # DASK CLIENT
-
     client = Client("tcp://dask-scheduler:8786")
-
     print(client)
-
     # JOB IDS
     job_ids = [37, 38]
-
     # HDFS GEOTIFF PATHS
-
     pre_tif = (f"/user/btcchl0040/"
                f"dask_preprocessed/"
                f"{job_ids[0]}/"
                f"{job_ids[0]}_tile.tif")
-
     post_tif = (f"/user/btcchl0040/"
                 f"dask_preprocessed/"
                 f"{job_ids[1]}/"
                 f"{job_ids[1]}_tile.tif")
 
     print(f"Pre-event : {pre_tif}")
-
     print(f"Post-event: {post_tif}")
-
     # GET RASTER DIMENSIONS
-
     print("\nReading GeoTIFF dimensions...")
-
     height, width, crs, transform = (get_geotiff_shape(pre_tif))
-
     print(f"Raster dimensions: "
           f"{width} x {height}")
-
     print(f"CRS: {crs}")
-
     # TILE SIZE
 
     TILE = 1024
-
     tasks = []
-
     tile_id = 0
-
+    # creating multiple jobs
     for y in range(0, height, TILE):
-
         for x in range(0, width, TILE):
             w = min(TILE, width - x)
-
             h = min(TILE, height - y)
-
             tasks.append((tile_id, pre_tif, post_tif, (x, y, w, h)))
-
             tile_id += 1
-
     print(f"\nTotal tiles: {len(tasks)}")
-
     # SUBMIT TASKS
-
     start = time.time()
-
     futures = [
         client.submit(process_tile, task, pure=False)
         for task in tasks
     ]
-
     # COLLECT RESULTS
-
     results = client.gather(futures)
     pipeline_time = (time.time() - start)
     # TOTAL FLOOD PIXELS

@@ -110,15 +110,9 @@ def process_tile(task):
 # MAIN DRIVER
 # ----------------------------------------
 def main():
-
     client = Client("tcp://dask-scheduler:8786")
-
     print(client)
 
-    #pre_zarr = "hdfs://namenode:8020/user/btcchl0040/spark_preprocessed/7/43_tile.zarr"
-
-    #post_zarr = "hdfs://namenode:8020/user/btcchl0040/spark_preprocessed/8/40_tile.zarr"
-    
     job_ids = [37, 38]
 
     pre_zarr = (
@@ -130,8 +124,7 @@ def main():
         f"/user/btcchl0040/dask_preprocessed/"
         f"{job_ids[1]}/{job_ids[1]}_tile.zarr"
     )
-    
-    
+
     TILE = 1024
 
     tasks = []

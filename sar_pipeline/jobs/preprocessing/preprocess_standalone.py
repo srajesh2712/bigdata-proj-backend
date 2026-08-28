@@ -88,27 +88,8 @@ def run_snap_graph(graph_path, output_file):
             bufsize=1 # buffer the output so that it can be read
         )
 
-        proc_monitor = psutil.Process(process.pid) # get the process for monitoring
-        peak_cpu = 0
-        peak_mem = 0
 
-        while process.poll() is None: # Continue monitoring while the SNAP process is running and get the status , 0 if exited
-            try:
-                cpu = proc_monitor.cpu_percent(interval=0.1)
-                mem = proc_monitor.memory_info().rss / (1024 * 1024)
-                peak_cpu = max(peak_cpu, cpu)
-                peak_mem = max(peak_mem, mem)
-            except psutil.NoSuchProcess: # handle if SNAP suddenly terminates or is killed before psutil can read
-                break
-
-            line = process.stdout.readline()
-            if line:
-                sys.stdout.write(line)
-                sys.stdout.flush()
-
-        print(f"Metrics: Peak CPU: {peak_cpu}%, Peak RAM: {peak_mem:.2f} MB")
-
-        remaining_output = process.communicate()[0]
+        remaining_output = process.communicate()[0]  # Wait for the process to finish and collect any remaining output
         if remaining_output:
             sys.stdout.write(remaining_output)
             sys.stdout.flush()
@@ -225,12 +206,6 @@ def convert_geotiff_to_zarr(geotiff_path):
     """
     Convert GeoTIFF to chunked Zarr format.
 
-    Example:
-        input:
-            /data/scene_output.tif
-
-        output:
-            /data/scene_output.zarr/
     """
 
     if not os.path.isfile(geotiff_path):
@@ -244,7 +219,7 @@ def convert_geotiff_to_zarr(geotiff_path):
     print(f"Input : {geotiff_path}")
     print(f"Output: {zarr_path}")
 
-    # Open GeoTIFF lazily using Dask chunks
+
     raster = rioxarray.open_rasterio(
         geotiff_path,
         chunks={

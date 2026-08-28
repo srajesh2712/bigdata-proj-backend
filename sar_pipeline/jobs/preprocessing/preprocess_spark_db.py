@@ -55,10 +55,6 @@ def convert_hdfs_tiff_to_zarr(hdfs_tiff_path):
         user=HADOOP_USER
     )
 
-    # Example:
-    # /user/.../22/22_tile.tif
-    # ->
-    # /user/.../22/22_tile.zarr
     hdfs_zarr_path = hdfs_tiff_path.replace(".tif", ".zarr")
 
     # Temporary local directory
@@ -91,9 +87,9 @@ def convert_hdfs_tiff_to_zarr(hdfs_tiff_path):
         shutil.rmtree(local_zarr, ignore_errors=True)
 
 
-# ----------------------------
+
 # HDFS upload helper
-# ----------------------------
+
 def write_to_hdfs(local_file_path, hdfs_target_path):
     fs = fsspec.filesystem("hdfs", host="namenode", port=8020, user=HADOOP_USER)
     hdfs_dir = os.path.dirname(hdfs_target_path)
@@ -102,9 +98,9 @@ def write_to_hdfs(local_file_path, hdfs_target_path):
     fs.put(local_file_path, hdfs_target_path)
     return hdfs_target_path
 
-# ----------------------------
+
 # SNAP Graph updater
-# ----------------------------
+
 def update_snap_graph(xml_path, new_input_safe_path, new_geo_region, new_band_names, new_output_tiff_path, output_path):
     tree = ET.parse(xml_path)
     root = tree.getroot()

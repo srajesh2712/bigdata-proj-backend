@@ -1,11 +1,6 @@
 import os
 import fsspec
 import rasterio
-
-# --------------------------
-# CONFIG
-# --------------------------
-
 HADOOP_USER = "btcchl0040"
 HDFS_NAMENODE = "namenode"
 HDFS_PORT = 8020
@@ -19,10 +14,6 @@ JOB_IDS = [30,31,32,33]
 
 HDFS_BASE = "/user/btcchl0040/dask_preprocessed"
 
-
-# --------------------------
-# HDFS UTILS
-# --------------------------
 
 def get_hdfs_size(path, fs):
     """
@@ -64,12 +55,6 @@ def get_job_paths(job_ids):
 
     return tiff_paths, zarr_paths
 
-
-
-# --------------------------
-# TIFF DIMENSION CHECK
-# --------------------------
-
 def print_file_dimensions(tiff_paths, fs):
 
     print(
@@ -92,11 +77,6 @@ def print_file_dimensions(tiff_paths, fs):
                     f"{src.width:<10} x {src.height:<10}"
                 )
 
-
-# --------------------------
-# MAIN
-# --------------------------
-
 if __name__ == "__main__":
 
 
@@ -112,7 +92,7 @@ if __name__ == "__main__":
 
 
     print("--- HDFS TIFF Vs ZARR STORAGE ANALYSIS ---")
-
+    # table header below
     print(
         f"{'File Name':<25} | "
         f"{'TIFF Size':<12} | "
@@ -120,7 +100,6 @@ if __name__ == "__main__":
         f"{'Savings'}"
     )
 
-    print("-" * 70)
 
 
     total_tif_mb = 0
@@ -202,5 +181,3 @@ if __name__ == "__main__":
         f"\nOverall Storage Reduction: "
         f"{total_tif_mb-total_zarr_mb:.2f} MB saved"
     )
-
-    print("-" * 40)

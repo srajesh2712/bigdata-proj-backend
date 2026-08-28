@@ -158,16 +158,18 @@ def process_tiles_in_partition(records):
             # Step 2: Synchronized execution arguments matching Standalone environment
             cmd = [
                 gpt_command, temp_graph,
-                "-e",
-                "-c", "2G",
-                "-J-Xmx6G",
-                "-q", "2",
-                "-J-Duser.home=/tmp",
-                "-Dsnap.jai.defaultTileSize=512",
-                "-Dsnap.dataio.reader.tileWidth=512",
-                "-Dsnap.dataio.reader.tileHeight=512",
-                "-Djava.awt.headless=true",
-                "-PexternalOrbitFile=none"
+
+                "-e",  # Enable detailed error diagnostics
+                "-c", "2G",  # Allocate 2 GB to the internal SNAP tile cache
+                "-J-Xmx6G",  # Limit Java Virtual Machine heap memory to 6 GB
+                "-q", "2",  # Restrict execution thread pool to 2 threads
+                "-J-Duser.home=/tmp",  # Set temporary user home directory to prevent container permission conflicts
+                "-Dsnap.jai.defaultTileSize=512",  # Set JAI processing tile size to 512x512 pixels
+                "-Dsnap.dataio.reader.tileWidth=512",  # Set image reader tile width to 512 pixels
+                "-Dsnap.dataio.reader.tileHeight=512",  # Set image reader tile height to 512 pixels
+                "-Djava.awt.headless=true",  # Disable GUI rendering components for headless server environments
+                "-Dsnap.productlibrary.disable=true",  # Disable product library updates to accelerate initialization
+                "-PexternalOrbitFile=none"  # Suppress external precise orbit file downloads
             ]
             
             try:

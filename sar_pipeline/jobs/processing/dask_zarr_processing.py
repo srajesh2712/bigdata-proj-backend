@@ -5,7 +5,7 @@ import zarr
 import fsspec
 import logging
 from datetime import datetime
-
+from dask.distributed import get_worker
 logging.basicConfig(level=logging.INFO)
 
 # ----------------------------------------
@@ -35,11 +35,17 @@ def process_tile(task):
     start = time.time()
 
     try:
+        worker = get_worker()
 
+        worker_id = worker.address
+        worker_name = worker.name
         x, y, w, h = win
 
         pre_store = open_zarr_hdfs(pre_path)
         post_store = open_zarr_hdfs(post_path)
+
+        pre_shape = pre_store["band_data"].shape
+        post_shape = post_store["band_data"].shape
 
         pre = pre_store["band_data"][0, y:y+h, x:x+w]
         post = post_store["band_data"][0, y:y+h, x:x+w]
@@ -52,7 +58,11 @@ def process_tile(task):
                 "pixel_count": 0,
                 "status": "EMPTY_LAND",
                 "duration": round(time.time()-start,2),
-                "processed_at": datetime.utcnow().isoformat()
+                "worker": worker_id,
+                "worker_name": worker_name,
+                "processed_at": datetime.utcnow().isoformat(),
+                "pre_shape": pre_shape,
+                "post_shape": post_shape,
             }
 
         # ----------------------------------------
@@ -74,7 +84,11 @@ def process_tile(task):
             "pixel_count": pixel_count,
             "status": "SUCCESS",
             "duration": round(time.time()-start,2),
-            "processed_at": datetime.utcnow().isoformat()
+            "worker": worker_id,
+            "worker_name": worker_name,
+            "processed_at": datetime.utcnow().isoformat(),
+            "pre_shape": pre_shape,
+            "post_shape": post_shape,
 
         }
 
@@ -86,7 +100,8 @@ def process_tile(task):
             "pixel_count": 0,
             "status": f"ERROR : {e}",
             "duration": round(time.time()-start,2),
-            "processed_at": datetime.utcnow().isoformat()
+            "processed_at": datetime.utcnow().isoformat(),
+
 
         }
 
@@ -100,33 +115,47 @@ def main():
 
     print(client)
 
-    pre_zarr = "hdfs://namenode:8020/user/btcchl0040/spark_preprocessed/7/43_tile.zarr"
+    #pre_zarr = "hdfs://namenode:8020/user/btcchl0040/spark_preprocessed/7/43_tile.zarr"
 
-    post_zarr = "hdfs://namenode:8020/user/btcchl0040/spark_preprocessed/8/40_tile.zarr"
+    #post_zarr = "hdfs://namenode:8020/user/btcchl0040/spark_preprocessed/8/40_tile.zarr"
+    
+    job_ids = [37, 38]
 
+    pre_zarr = (
+        f"/user/btcchl0040/dask_preprocessed/"
+        f"{job_ids[0]}/{job_ids[0]}_tile.zarr"
+    )
+
+    post_zarr = (
+        f"/user/btcchl0040/dask_preprocessed/"
+        f"{job_ids[1]}/{job_ids[1]}_tile.zarr"
+    )
+    
+    
     TILE = 1024
 
     tasks = []
+    tile_id = 0
+    pre_store = open_zarr_hdfs(pre_zarr)
+    shape = pre_store["band_data"].shape
+    height = shape[1]
+    width = shape[2]
+    for y in range(0, height, TILE):
 
-    for r in range(6):
-
-        for c in range(7):
-
-            tile_id = r*7 + c
+        for x in range(0, width, TILE):
+            w = min(TILE, width - x)
+            h = min(TILE, height - y)
 
             tasks.append(
-
                 (
                     tile_id,
                     pre_zarr,
                     post_zarr,
-                    (c*TILE,
-                     r*TILE,
-                     TILE,
-                     TILE)
+                    (x, y, w, h)
                 )
-
             )
+
+            tile_id += 1
 
     start = time.time()
 
@@ -158,6 +187,10 @@ def main():
             f"{r['status']} | "
             f"Pixels={r['pixel_count']} | "
             f"Duration={r['duration']} sec"
+            f"PRE shape={r.get('pre_shape')} | "
+            f"POST shape={r.get('post_shape')}"
+            f"Worker ID={r.get('worker')} | "
+            f"Worker Name={r.get('worker_name')}"
         )
 
     print("\n--------------------------------")

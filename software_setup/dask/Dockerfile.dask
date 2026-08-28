@@ -1,0 +1,90 @@
+# --- STAGE 1: HADOOP EXTRACTOR (Source for native libraries, configs, and JARs) ---
+FROM apache/hadoop:3.3.6 AS hadoop_extractor
+
+# ----------------------------------------------------------------------
+# --- STAGE 2: FINAL DASK IMAGE ---
+FROM daskdev/dask:latest
+
+# Define HADOOP_HOME path in the FINAL image
+ENV HADOOP_HOME=/usr/local/hadoop_client
+ENV HADOOP_VERSION=3.3.6
+
+# Set environment variables for non-interactive mode and timezone
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+# --- Install Dependencies ---
+RUN apt-get update \
+    && apt-get install -y \
+        libncursesw6 \
+        readline-common \
+        openjdk-17-jre \
+        libxml2 \
+        locales \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Mamba for faster dependency solving
+#RUN conda install -y mamba -c conda-forge
+
+# 1. Core packages and fix numpy compatibility
+#RUN mamba install -y -c conda-forge 'pyarrow' 'numpy>=1.22'
+
+# 2. Install geospatial stack with HDFS support
+# We pin GDAL and libgdal to 3.6 to snap the solver into place
+RUN mamba install -y -c conda-forge \
+    'gdal=3.6' \
+    'libgdal=3.6' \
+    'rasterio' \
+    'rioxarray' \
+    'zarr' \       
+    'fsspec' \     
+    'dask-image' \
+    'pyarrow' \
+    'numpy>=1.22' \
+    'psycopg2-binary' \
+    'sqlalchemy' \
+    'pandas'
+
+# Cleanup conda cache
+RUN conda clean --all -y
+
+COPY --from=hadoop_extractor /opt/hadoop/lib/native $HADOOP_HOME/lib/native
+COPY --from=hadoop_extractor /opt/hadoop/share/hadoop $HADOOP_HOME/share/hadoop
+COPY --from=hadoop_extractor /opt/hadoop/bin $HADOOP_HOME/bin
+COPY --from=hadoop_extractor /opt/hadoop/etc/hadoop $HADOOP_HOME/etc/hadoop
+
+# Copy SNAP binaries
+COPY ./esa-snap /opt/snap
+RUN chmod +x /opt/snap/bin/gpt \
+    && ln -sf /opt/snap/bin/gpt /usr/bin/gpt
+    
+# --- Environment Variables for HDFS Connectivity ---
+
+# JAVA
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH=$PATH:$JAVA_HOME/bin
+
+# Update linker with libjvm
+RUN JRE_PATH=$(find $JAVA_HOME -name libjvm.so | xargs dirname) \
+    && echo $JRE_PATH | tee /etc/ld.so.conf.d/jvm.conf \
+    && /sbin/ldconfig
+
+# Library paths
+ENV LD_LIBRARY_PATH=$JAVA_HOME/lib/server:$HADOOP_HOME/lib/native:${LD_LIBRARY_PATH}
+
+# Hadoop config + classpath
+ENV HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
+ENV GDAL_HDFS_CONFIG_FILE=$HADOOP_CONF_DIR
+ENV CLASSPATH=${CLASSPATH}:${HADOOP_CONF_DIR}:$HADOOP_HOME/share/hadoop/common/*:$HADOOP_HOME/share/hadoop/common/lib/*:$HADOOP_HOME/share/hadoop/hdfs/*:$HADOOP_HOME/share/hadoop/hdfs/lib/*
+
+# Add Hadoop bin to PATH
+ENV PATH=$PATH:$HADOOP_HOME/bin
+
+ENV HADOOP_USER_NAME=btcchl0040
+# in Dask Dockerfile, before switching USER
+RUN groupadd -g 1000 btcchl0040 || true \
+    && useradd -m -u 1000 -g 1000 -s /bin/bash btcchl0040 || true
+USER btcchl0040
+# Default command
+CMD ["/bin/bash"]
+

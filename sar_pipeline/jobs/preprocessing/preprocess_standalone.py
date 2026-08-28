@@ -62,15 +62,18 @@ def run_snap_graph(graph_path, output_file):
     gpt_command = "/opt/snap/bin/gpt"
     command = [
         "gpt", graph_path,
-        "-c", "2G", # cache size
-        "-J-Xmx6G", # jvm param - maximum heap memory
-        "-q", "2", # default parallel thread
-        "-J-Duser.home=/tmp",
-        "-Dsnap.jai.defaultTileSize=512",
-        "-Dsnap.dataio.reader.tileWidth=512",
-        "-Dsnap.dataio.reader.tileHeight=512",
-        "-Djava.awt.headless=true",
-        "-PexternalOrbitFile=none",
+
+        "-e",  # Enable detailed error diagnostics
+        "-c", "2G",  # Allocate 2 GB to the internal SNAP tile cache
+        "-J-Xmx6G",  # Limit Java Virtual Machine heap memory to 6 GB
+        "-q", "2",  # Restrict execution thread pool to 2 threads
+        "-J-Duser.home=/tmp",  # Set temporary user home directory to prevent container permission conflicts
+        "-Dsnap.jai.defaultTileSize=512",  # Set JAI processing tile size to 512x512 pixels
+        "-Dsnap.dataio.reader.tileWidth=512",  # Set image reader tile width to 512 pixels
+        "-Dsnap.dataio.reader.tileHeight=512",  # Set image reader tile height to 512 pixels
+        "-Djava.awt.headless=true",  # Disable GUI rendering components for headless server environments
+        "-Dsnap.productlibrary.disable=true",  # Disable product library updates to accelerate initialization
+        "-PexternalOrbitFile=none"  # Suppress external precise orbit file downloads
         "-J-Djava.util.concurrent.ForkJoinPool.common.parallelism=2"
     ]
 

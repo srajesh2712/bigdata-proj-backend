@@ -8,7 +8,7 @@
       <file>/home/btcchl0040/Documents/SAR_Data/INPUT/S1C_IW_SLC__1SDV_20250905T041253_20250905T041321_003984_007ED4_7D8C.SAFE/manifest.safe</file>
       <copyMetadata>true</copyMetadata>
       <bandNames/>
-      <pixelRegion>10000,10000,256,256</pixelRegion>
+      <pixelRegion>0,0,68909,15019</pixelRegion>
       <maskNames/>
     </parameters>
   </node>
@@ -20,7 +20,7 @@
       <file>/home/btcchl0040/Documents/SAR_Data/INPUT/S1C_IW_SLC__1SDV_20250824T041253_20250824T041321_003809_00799C_256E.SAFE/manifest.safe</file>
       <copyMetadata>true</copyMetadata>
       <bandNames/>
-      <pixelRegion>10000,10000,256,256</pixelRegion>
+      <pixelRegion>0,0,68909,15019</pixelRegion>
       <maskNames/>
     </parameters>
   </node>
@@ -125,21 +125,14 @@
       <selectedPolarisations/>
     </parameters>
   </node>
-  <node id="SnaphuExport">
-    <operator>SnaphuExport</operator>
+  <node id="Write">
+    <operator>Write</operator>
     <sources>
       <sourceProduct refid="TOPSAR-Deburst"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <targetFolder>/home/btcchl0040/Documents/SAR_Data/OUTPUT/insar_output</targetFolder>
-      <statCostMode>DEFO</statCostMode>
-      <initMethod>MST</initMethod>
-      <numberOfTileRows>2</numberOfTileRows>
-      <numberOfTileCols>2</numberOfTileCols>
-      <numberOfProcessors>4</numberOfProcessors>
-      <rowOverlap>20</rowOverlap>
-      <colOverlap>20</colOverlap>
-      <tileCostThreshold>500</tileCostThreshold>
+      <file>/home/btcchl0040/Documents/SAR_Data/S1C_IW_SLC__1SDV_20250905T041253_20250905T041321_003984_007ED4_7D8C_Orb_Stack_Ifg_Deb.dim</file>
+      <formatName>BEAM-DIMAP</formatName>
     </parameters>
   </node>
   <applicationData id="Presentation">
@@ -171,8 +164,8 @@
     <node id="TOPSAR-Deburst">
       <displayPosition x="692.0" y="84.0"/>
     </node>
-    <node id="SnaphuExport">
-      <displayPosition x="823.0" y="91.0"/>
+    <node id="Write">
+      <displayPosition x="835.0" y="94.0"/>
     </node>
   </applicationData>
 </graph>

@@ -1,0 +1,141 @@
+services:
+  spark-master:
+    build:
+      context: .
+      dockerfile: Dockerfile.sar
+    image: spark-sar-custom:4.1.1
+    user: "1000:1000"
+    container_name: spark-master
+    volumes:
+      - ./iceberg_warehouse:/opt/spark/warehouse
+      - ./spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+      - /home/btcchl0040/Documents/SAR_Data:/opt/spark/data
+      - /home/btcchl0040/.snap:/root/.snap
+      - /home/btcchl0040/Documents/summer-project-codes/bigdata-proj-backend/sar_pipeline/jobs:/opt/spark-jobs 
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+    ports:
+      - "9090:8080"
+      - "7077:7077"
+    networks:
+      - sar_shared_network
+    # This forces the master to stay in the foreground
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+
+  spark-worker-1:
+    image: spark-sar-custom:4.1.1
+    container_name: spark-worker-1
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=3
+      - SPARK_WORKER_MEMORY=6G
+    volumes:
+      - ./iceberg_warehouse:/opt/spark/warehouse
+      - ./spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+      - /home/btcchl0040/Documents/SAR_Data:/opt/spark/data
+      - /home/btcchl0040/.snap:/root/.snap
+      - /home/btcchl0040/Documents/summer-project-codes/bigdata-proj-backend/sar_pipeline/jobs:/opt/spark-jobs 
+      - /home/btcchl0040/esa-snap:/opt/snap
+    networks:
+      - sar_shared_network
+    # ADD THIS COMMAND TO START THE WORKER PROCESS:
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+
+  spark-worker-2:
+    image: spark-sar-custom:4.1.1
+    container_name: spark-worker-2
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=3
+      - SPARK_WORKER_MEMORY=6G
+    volumes:
+      - ./iceberg_warehouse:/opt/spark/warehouse
+      - ./spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+      - /home/btcchl0040/Documents/SAR_Data:/opt/spark/data
+      - /home/btcchl0040/.snap:/root/.snap
+      - /home/btcchl0040/Documents/summer-project-codes/bigdata-proj-backend/sar_pipeline/jobs:/opt/spark-jobs 
+      - /home/btcchl0040/esa-snap:/opt/snap
+    networks:
+      - sar_shared_network
+    # ADD THIS COMMAND TO START THE WORKER PROCESS:
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+      
+  
+
+  spark-submit:
+    build:
+      context: .
+      dockerfile: Dockerfile.sar
+    image: spark-sar-custom:4.1.1
+    user: "1000:1000"
+    container_name: spark-submit
+    environment:
+      - SPARK_MODE=submit
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      
+      # 1. Load the Spark 4.0 compatible JARs
+      #- SPARK_CONF_spark_jars=/opt/spark-jars/iceberg-spark-runtime-4.0_2.13-1.10.0.jar,/opt/spark-jars/sedona-spark-shaded-4.0_2.13-1.8.1.jar,/opt/spark-jars/geotools-wrapper-1.8.1-29.2.jar
+      
+      # 2. Extensions and Serializers
+      - SPARK_CONF_spark_sql_extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,org.apache.sedona.viz.sql.SedonaVizExtensions
+      - SPARK_CONF_spark_serializer=org.apache.spark.serializer.KryoSerializer
+      - SPARK_CONF_spark_kryo_registrator=org.apache.sedona.core.serde.SedonaKryoRegistrator
+      
+      # 3. Catalog Configuration
+      - SPARK_CONF_spark_sql_catalog_local_warehouse=/opt/spark/warehouse
+    volumes:
+      - /home/btcchl0040/Documents/summer-project-codes/bigdata-proj-backend/sar_pipeline/jobs:/opt/spark-jobs   # This maps your local 'jobs' folder to the container
+      - /home/btcchl0040/Documents/SAR_Data:/opt/spark/data
+      - ./jars:/opt/spark-jars   # This maps your local 'jars' folder to the container
+      - ./iceberg_warehouse:/opt/spark/warehouse
+      - ./spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+    tty: true
+    stdin_open: true
+    command: /bin/bash
+    networks:
+      - sar_shared_network
+  spark-thrift:
+    image: spark-sar-custom:4.1.1
+    user: "1000:1000"
+    profiles:
+      - tools
+    container_name: spark-thrift
+    depends_on:
+      - spark-master
+    ports:
+      - "10000:10000"
+    volumes:
+      - ./iceberg_warehouse:/opt/spark/warehouse
+      - ./spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+      - ./jars:/opt/spark-jars
+    networks:
+      - sar_shared_network
+    environment:
+      - SPARK_MODE=client
+    # The command below starts the Thrift Server in the foreground so the container stays alive
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.SparkSubmit
+      --master spark://spark-master:7077
+      --conf spark.driver.extraClassPath=/opt/spark-jars/iceberg-spark-runtime-4.0_2.13-1.10.0.jar:/opt/spark-jars/sedona-spark-shaded-4.0_2.13-1.8.1.jar
+      --conf spark.executor.extraClassPath=/opt/spark-jars/iceberg-spark-runtime-4.0_2.13-1.10.0.jar:/opt/spark-jars/sedona-spark-shaded-4.0_2.13-1.8.1.jar
+      --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
+      --conf spark.sql.catalog.local=org.apache.iceberg.spark.SparkCatalog
+      --conf spark.sql.catalog.local.type=hadoop
+      --conf spark.sql.catalog.local.warehouse=/opt/spark/warehouse
+      --conf spark.sql.catalog.local.default-namespace=default
+      --conf spark.sql.defaultCatalog=local
+      --conf spark.hive.server2.thrift.port=10000
+      --conf spark.hive.server2.thrift.bind.host=0.0.0.0
+      --conf spark.cores.max=1
+      --conf spark.executor.cores=1
+      --conf spark.driver.memory=500m
+      --conf spark.executor.memory=500m
+      --conf spark.driver.maxResultSize=256m
+      --class org.apache.spark.sql.hive.thriftserver.HiveThriftServer2
+      spark-internal
+networks:
+  sar_shared_network:
+    external: true

@@ -42,6 +42,7 @@ def get_hdfs_dir_size(hdfs_path):
         
         
 def write_to_hdfs(local_file_path, hdfs_target_path):
+    """ Write the file to HDFS """
     fs = fsspec.filesystem("hdfs", host="namenode", port=8020, user=HADOOP_USER)
     hdfs_dir = os.path.dirname(hdfs_target_path)
     if not fs.exists(hdfs_dir):
@@ -54,7 +55,7 @@ import shutil
 import dask
 
 
-dask.config.set(scheduler="synchronous")
+#dask.config.set(scheduler="synchronous") // commenting this as later i will make this run in parallel
 
 
 def convert_hdfs_tiff_to_zarr(hdfs_tiff_path):
@@ -80,18 +81,14 @@ def convert_hdfs_tiff_to_zarr(hdfs_tiff_path):
             da.load()
 
         # Preserve CRS and transform
-        da = da.rio.write_crs(da.rio.crs)
-        da = da.rio.write_transform()
+        da = da.rio.write_crs(da.rio.crs) # write crs
+        da = da.rio.write_transform() # write the affine transform
 
         ds = da.to_dataset(
             name="band_data"
-        )
+        ) # using xarray   and convert data array to data set
 
-        ds.to_zarr(
-            local_zarr_path,
-            mode="w",
-            consolidated=False
-        )
+        ds.to_zarr(local_zarr_path, mode="w", consolidated=False)  # Save dataset as a Zarr store, overwriting existing data without consolidating metadata
 
         # Upload Zarr directory to HDFS
         fs.put(
@@ -106,6 +103,21 @@ def convert_hdfs_tiff_to_zarr(hdfs_tiff_path):
         shutil.rmtree(local_zarr_path, ignore_errors=True)
 
 def update_snap_graph(xml_path, new_input_safe_path, new_geo_region, new_band_names, new_output_tiff_path, output_path):
+    """
+        Parses an ESA SNAP XML processing graph and updates its node parameters with new file paths,
+        spectral bands, and spatial subset coordinates before saving the modified XML.
+
+        Parameters:
+            xml_path (str): Path to the template SNAP graph XML file.
+            new_input_safe_path (str): File path for the input product ('Read' node).
+            new_geo_region (str): WKT polygon geometry specifying the bounding box ('Subset' node).
+            new_band_names (str): Comma-separated band names to extract ('Subset' node).
+            new_output_tiff_path (str): Destination path for the processed output ('Write' node).
+            output_path (str): Target file path to write the updated XML graph.
+
+        Returns:
+            str: The path to the saved XML graph file.
+        """
     tree = ET.parse(xml_path)
     root = tree.getroot()
     def find_node_param(node_id, param_name):
@@ -124,10 +136,15 @@ def update_snap_graph(xml_path, new_input_safe_path, new_geo_region, new_band_na
     return output_path
 
 def process_tile_worker(payload):
-    """Executes inside the dask-worker container"""
-    
-    # Global cluster limit to process exactly 2 tiles at a time total
-    with Semaphore(max_leases=4, name="global_gpt_limit"):
+    """ Executes inside the dask-worker container
+        Dask worker task that processes a geospatial tile by running an ESA SNAP GPT graph,
+        uploading the resulting GeoTIFF to HDFS, and converting the file to a Zarr dataset.
+
+        Executes under a distributed Dask semaphore limit to constrain maximum concurrent GPT processes.
+        Tracks stage timings, returns processing metadata on success, and catches exceptions with tracebacks.
+        """
+    # Global cluster limit to process exactly 4 tiles at a time total
+    with Semaphore(max_leases=4, name="global_gpt_limit"): # concurrency lock tool semaphore which allows N threads to process at a time
         input_file = payload['local_path']
         output_tiff = payload['output_tiff']
         hdfs_output_path = payload['hdfs_output_path']
@@ -150,17 +167,17 @@ def process_tile_worker(payload):
             # Fixed syntax typo: "Djava.awt.headless=true" -> "-Djava.awt.headless=true"
             cmd = [
                 gpt_bin, worker_tmp,
-                "-e",
-                "-c", "2G",
-                "-J-Xmx6G",
-                "-q", "2",
-                "-J-Duser.home=/tmp",
-                "-Dsnap.jai.defaultTileSize=512",
-                "-Dsnap.dataio.reader.tileWidth=512",
-                "-Dsnap.dataio.reader.tileHeight=512",
-                "-Djava.awt.headless=true",
-                "-Dsnap.productlibrary.disable=true",
-                "-PexternalOrbitFile=none"
+                "-e", # Enable detailed error diagnostics
+                "-c", "2G", # Allocate 2 GB to the internal SNAP tile cache
+                "-J-Xmx6G",# Limit Java Virtual Machine heap memory to 6 GB
+                "-q", "2", # Restrict execution thread pool to 2 threads
+                "-J-Duser.home=/tmp", # Set temporary user home directory to prevent container permission conflicts
+                "-Dsnap.jai.defaultTileSize=512", # Set JAI processing tile size to 512x512 pixels
+                "-Dsnap.dataio.reader.tileWidth=512", # Set image reader tile width to 512 pixels
+                "-Dsnap.dataio.reader.tileHeight=512", # Set image reader tile height to 512 pixels
+                "-Djava.awt.headless=true", # Disable GUI rendering components for headless server environments
+                "-Dsnap.productlibrary.disable=true", # Disable product library updates to accelerate initialization
+                "-PexternalOrbitFile=none" # Suppress external precise orbit file downloads
             ]
             pipeline_start = datetime.now()
 
@@ -169,11 +186,12 @@ def process_tile_worker(payload):
             # -----------------------------
             preprocess_start = datetime.now()
             try:
+                # Execute the SNAP GPT command silently and raise an exception if execution fails
                 subprocess.run(
-                    cmd, 
-                    stdout=subprocess.DEVNULL, 
-                    stderr=subprocess.STDOUT, 
-                    check=True
+                    cmd,
+                    stdout=subprocess.DEVNULL,  # Suppress standard output
+                    stderr=subprocess.STDOUT,  # Redirect standard error to stdout (also suppressed)
+                    check=True  # Raise CalledProcessError if return code is non-zero
                 )
             except subprocess.CalledProcessError as e:
                 raise RuntimeError(f"GPT failed with code {e.returncode}")
@@ -182,9 +200,10 @@ def process_tile_worker(payload):
 
             preprocessing_seconds = (
                     preprocess_end - preprocess_start
-            ).total_seconds()
+            ).total_seconds() # calculate the preprocessing duration
 
             file_size = os.path.getsize(output_tiff)
+            # calculate hdfs update duration
             hdfs_upload_start = datetime.now()
             hdfs_written_path = write_to_hdfs(output_tiff, hdfs_output_path)
             hdfs_upload_end = datetime.now()
@@ -245,6 +264,7 @@ def process_tile_worker(payload):
                 "trace": traceback.format_exc()
             }
 # j.job_id = ANY(%s)
+# function to fetch the tasks from db
 def fetch_tasks_from_db():
     conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor(cursor_factory=RealDictCursor)

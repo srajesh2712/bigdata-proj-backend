@@ -18,10 +18,10 @@ HDFS_PORT = 8020
 os.environ["HADOOP_USER_NAME"] = HADOOP_USER
 
 ZARR_PATHS = [
-    ("/user/btcchl0040/dask_preprocessed/1/13_tile.b_storage", "2024-01-01"),
-    ("/user/btcchl0040/dask_preprocessed/2/16_tile.b_storage", "2024-01-13"),
-    ("/user/btcchl0040/dask_preprocessed/3/15_tile.b_storage", "2024-01-25"),
-    ("/user/btcchl0040/dask_preprocessed/4/14_tile.b_storage", "2024-02-06"),
+    ("/user/btcchl0040/dask_preprocessed/1/13_tile.storage", "2024-01-01"),
+    ("/user/btcchl0040/dask_preprocessed/2/16_tile.storage", "2024-01-13"),
+    ("/user/btcchl0040/dask_preprocessed/3/15_tile.storage", "2024-01-25"),
+    ("/user/btcchl0040/dask_preprocessed/4/14_tile.storage", "2024-02-06"),
 ]
 
 # --------------------------

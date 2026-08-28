@@ -1,10 +1,15 @@
-# REMOVED fetch_processing_files since we are syncing with the Job ID workflow
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import os
+from datetime import datetime
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+import psutil
+from dotenv import load_dotenv
+import rioxarray
+import xarray as xr
 
-# Updated to use search_path mapping
 engine = create_engine(
     "postgresql+psycopg2://rajesh:rajesh@localhost/eo",
     connect_args={"options": "-csearch_path=sar"}
@@ -13,18 +18,8 @@ Session = sessionmaker(bind=engine)
 session = Session()
 
 
-from datetime import datetime
-import subprocess
-import sys
-import xml.etree.ElementTree as ET
-import psutil
+load_dotenv() # load env file
 
-
-from dotenv import load_dotenv
-
-load_dotenv()
-
-# Configuration variables synchronized from Spark variables
 BASE_PATH = os.getenv('BASE_PATH')
 graph_xml_path = os.getenv('TEMPLATE_PATH')
 graph_xml = os.path.join(graph_xml_path, os.getenv('GRAPH_FILE_NAME'))
@@ -33,6 +28,11 @@ graph_xml = os.path.join(graph_xml_path, os.getenv('GRAPH_FILE_NAME'))
 def update_snap_graph(xml_path, new_input_safe_path, new_geo_region, new_band_names, new_output_tiff_path, output_path):
     tree = ET.parse(xml_path)
     root = tree.getroot()
+    ''' 
+    The below function will go over the
+     nodes -> parameters and set the value with the new value that comes in 
+    '''
+
 
     def find_node_param(node_id, param_name):
         for node in root.findall(".//node"):
@@ -62,50 +62,34 @@ def run_snap_graph(graph_path, output_file):
     gpt_command = "/opt/snap/bin/gpt"
     command = [
         "gpt", graph_path,
-        "-c", "2G",
-        "-J-Xmx6G",
-        "-q", "2",
-        "-J-Duser.home=/tmp",
-        "-Dsnap.jai.defaultTileSize=512",
-        "-Dsnap.dataio.reader.tileWidth=512",
-        "-Dsnap.dataio.reader.tileHeight=512",
-        "-Djava.awt.headless=true",
-        "-PexternalOrbitFile=none",
+
+        "-e",  # Enable detailed error diagnostics
+        "-c", "2G",  # Allocate 2 GB to the internal SNAP tile cache
+        "-J-Xmx6G",  # Limit Java Virtual Machine heap memory to 6 GB
+        "-q", "2",  # Restrict execution thread pool to 2 threads
+        "-J-Duser.home=/tmp",  # Set temporary user home directory to prevent container permission conflicts
+        "-Dsnap.jai.defaultTileSize=512",  # Set JAI processing tile size to 512x512 pixels
+        "-Dsnap.dataio.reader.tileWidth=512",  # Set image reader tile width to 512 pixels
+        "-Dsnap.dataio.reader.tileHeight=512",  # Set image reader tile height to 512 pixels
+        "-Djava.awt.headless=true",  # Disable GUI rendering components for headless server environments
+        "-Dsnap.productlibrary.disable=true",  # Disable product library updates to accelerate initialization
+        "-PexternalOrbitFile=none"  # Suppress external precise orbit file downloads
         "-J-Djava.util.concurrent.ForkJoinPool.common.parallelism=2"
     ]
 
     print(f"\n Running SNAP GPT with command:\n{' '.join(command)}\n")
-
+    # below code will open separate operating system process
     try:
         process = subprocess.Popen(
             command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
+            stdout=subprocess.PIPE, # capture the output so that python program can read this
+            stderr=subprocess.STDOUT, # capture the error for the program to read this
+            text=True, # decode the output from byte into plain text
+            bufsize=1 # buffer the output so that it can be read
         )
 
-        proc_monitor = psutil.Process(process.pid)
-        peak_cpu = 0
-        peak_mem = 0
 
-        while process.poll() is None:
-            try:
-                cpu = proc_monitor.cpu_percent(interval=0.1)
-                mem = proc_monitor.memory_info().rss / (1024 * 1024)
-                peak_cpu = max(peak_cpu, cpu)
-                peak_mem = max(peak_mem, mem)
-            except psutil.NoSuchProcess:
-                break
-
-            line = process.stdout.readline()
-            if line:
-                sys.stdout.write(line)
-                sys.stdout.flush()
-
-        print(f"Metrics: Peak CPU: {peak_cpu}%, Peak RAM: {peak_mem:.2f} MB")
-
-        remaining_output = process.communicate()[0]
+        remaining_output = process.communicate()[0]  # Wait for the process to finish and collect any remaining output
         if remaining_output:
             sys.stdout.write(remaining_output)
             sys.stdout.flush()
@@ -121,10 +105,9 @@ def run_snap_graph(graph_path, output_file):
 
 def preprocess_sar_files(target_job_ids):
     """
-    Fetches tasks exactly like the Spark code based on a target list of Job IDs,
+    Fetches tasks  based on a target list of Job IDs,
     processes them, and logs entries directly into sar.processing_artifacts.
     """
-    #log_id, start = insert_start_time('SAR_PREPROCESSING')
     start =  datetime.now().strftime("%Y%m%d_%H%M%S")
     print(f"Started execution loop at {start}")
 
@@ -172,6 +155,9 @@ def preprocess_sar_files(target_job_ids):
 
                 run_snap_graph(temp_graph, payload['output_tiff'])
 
+                zarr_output_path = convert_geotiff_to_zarr(
+                    payload['output_tiff']
+                )
                 file_size = os.path.getsize(payload['output_tiff'])
                 stop_dt = datetime.now()
                 duration = int((stop_dt - start_dt).total_seconds())
@@ -205,7 +191,10 @@ def preprocess_sar_files(target_job_ids):
 
             except Exception as task_err:
                 conn.rollback()
-                print(f"❌ Task {payload['task_id']} (Job {payload['job_id']}): FAILED")
+
+                print(
+                    f"❌ Task (Job {payload['job_id']}): FAILED"
+                )
                 print(f"   Reason: {str(task_err)}")
 
     finally:
@@ -213,10 +202,54 @@ def preprocess_sar_files(target_job_ids):
         end =  datetime.now().strftime("%Y%m%d_%H%M%S")
         print(f"Ended pipeline loop execution sequence at {end}")
 
+def convert_geotiff_to_zarr(geotiff_path):
+    """
+    Convert GeoTIFF to chunked Zarr format.
+
+    """
+
+    if not os.path.isfile(geotiff_path):
+        raise FileNotFoundError(
+            f"GeoTIFF file not found: {geotiff_path}"
+        )
+
+    zarr_path = os.path.splitext(geotiff_path)[0] + ".zarr"
+
+    print(f"\n🔄 Converting GeoTIFF to Zarr")
+    print(f"Input : {geotiff_path}")
+    print(f"Output: {zarr_path}")
+
+
+    raster = rioxarray.open_rasterio(
+        geotiff_path,
+        chunks={
+            "x": 512,
+            "y": 512
+        }
+    )
+
+    # Convert DataArray to Dataset
+    dataset = raster.to_dataset(name="sar_data")
+
+    # Store CRS information
+    dataset = dataset.rio.write_crs(raster.rio.crs)
+
+    # Write chunked Zarr
+    dataset.to_zarr(
+        zarr_path,
+        mode="w"
+    )
+
+    # Close resources
+    raster.close()
+
+    print(f"✅ Zarr conversion completed successfully")
+
+    return zarr_path
 
 if __name__ == '__main__':
     # Define the target job IDs you want to sync from your tracking metrics
-    TARGET_JOBS = [8, 7, 6, 5]
+    TARGET_JOBS = [9,10,11,12]
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 

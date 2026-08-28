@@ -25,10 +25,10 @@ BAND_INDEX = 1   # rasterio band starts from 1
 
 # ---- ZARR PATHS ----
 ZARR_PATHS = [
-    ("/user/btcchl0040/dask_preprocessed/1/13_tile.b_storage", "2024-01-01"),
-    ("/user/btcchl0040/dask_preprocessed/2/16_tile.b_storage", "2024-01-13"),
-    ("/user/btcchl0040/dask_preprocessed/3/15_tile.b_storage", "2024-01-25"),
-    ("/user/btcchl0040/dask_preprocessed/4/14_tile.b_storage", "2024-02-06"),
+    ("/user/btcchl0040/dask_preprocessed/1/13_tile.storage", "2024-01-01"),
+    ("/user/btcchl0040/dask_preprocessed/2/16_tile.storage", "2024-01-13"),
+    ("/user/btcchl0040/dask_preprocessed/3/15_tile.storage", "2024-01-25"),
+    ("/user/btcchl0040/dask_preprocessed/4/14_tile.storage", "2024-02-06"),
 ]
 
 # ---- TIFF PATHS (must exist locally or mounted path) ----
@@ -135,7 +135,7 @@ def run_zarr_workflow():
     
 def store_cube(cube):
     # HDFS path for stored cube
-    cube_store_path = "/user/btcchl0040/dask_preprocessed/aoi_cube.b_storage"
+    cube_store_path = "/user/btcchl0040/dask_preprocessed/aoi_cube.storage"
 
     # Use fsspec to handle HDFS storage
     fs = fsspec.filesystem("hdfs", host="namenode", port=8020, user="btcchl0040")

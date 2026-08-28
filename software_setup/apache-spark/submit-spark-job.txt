@@ -1,0 +1,172 @@
+
+docker exec -it spark-submit /opt/spark/bin/spark-submit   --master spark://spark-master:7077   --deploy-mode client   /opt/spark-jobs/
+
+docker exec -it -u root spark-submit bash -c "
+export HADOOP_USER_NAME=root;
+/opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --driver-memory 512M \
+  --executor-memory 2G \
+  --executor-cores 2 \
+  /opt/spark-jobs/spark_process_file_sar.py"
+
+docker exec -it -u root spark-submit bash -c "
+export HADOOP_USER_NAME=root;
+/opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --driver-memory 512M \
+  --executor-memory 1500M \
+  --executor-cores 1 \
+  /opt/spark-jobs/spark_process_file_sar_otsu.py"
+  
+docker exec -it -u root spark-submit bash -c "
+/opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --driver-memory 512M \
+  --executor-memory 1500M \
+  --executor-cores 1 \
+  /opt/spark-jobs/preprocessing/preprocess.py"
+  
+docker exec -it -u root spark-submit bash -c "
+export HADOOP_USER_NAME=root;
+/opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+  --conf spark.kryo.registrator=org.apache.sedona.viz.core.Serde.SedonaVizKryoRegistrator \
+   --jars /opt/spark-jars/sedona-spark-shaded-4.0_2.13-1.8.1.jar,/opt/spark-jars/geotools-wrapper-1.8.1-33.1.jar \
+   --conf spark.driver.extraClassPath=/opt/spark-jars/sedona-spark-shaded-4.0_2.13-1.8.1.jar:/opt/spark-jars/geotools-wrapper-1.8.1-33.1.jar \
+  --conf spark.executor.extraClassPath=/opt/spark-jars/sedona-spark-shaded-4.0_2.13-1.8.1.jar:/opt/spark-jars/geotools-wrapper-1.8.1-33.1.jar \
+  --driver-memory 1G \
+  --executor-memory 1G \
+  --executor-cores 1 \
+  /opt/spark-jobs/spark_process_file_sar_sedona.py"
+  
+  
+docker exec -it -u root spark-submit pip install apache-sedona==1.5.1
+
+  
+spark_process_file.py
+
+install libraries inside 3 containers
+
+docker exec -u 0 -it spark-submit pip install numpy
+
+docker exec -u 0 -it spark-master pip install numpy
+docker exec -u 0 -it spark-worker pip install numpy
+
+docker exec -u 0 -it spark-submit pip install rasterio
+docker exec -u 0 -it spark-master pip install rasterio
+docker exec -u 0 -it spark-worker pip install rasterio
+
+
+docker exec -it spark-submit /opt/spark/bin/spark-submit   --master spark://spark-master:7077   --deploy-mode client   /opt/spark-jobs/pi.py
+
+docker exec -it spark-submit /opt/spark/bin/spark-submit   --master spark://spark-master:7077   --deploy-mode client   /opt/spark-jobs/hdfs_test_job.py
+
+docker exec -it spark-submit /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --deploy-mode client \
+  --jars /opt/spark-jars/sedona-spark-shaded-3.0_2.12-1.5.1.jar,/opt/spark-jars/sedona-spark-3.5_2.12-1.7.2.jar, \
+  --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+  --conf spark.kryo.registrator=org.apache.sedona.core.serde.SedonaKryoRegistrator \
+/opt/spark-jobs/test_sedona.py
+
+
+
+docker exec -it spark-submit /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --deploy-mode client \
+  --jars /opt/spark-jars/sedona-spark-shaded-3.5_2.12-1.5.1.jar, /opt/spark-jars/geotools-wrapper-1.5.1-28.2.jar \
+  --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+  --conf spark.kryo.registrator=org.apache.sedona.core.serde.SedonaKryoRegistrator \
+/opt/spark-jobs/test_sedona.py
+
+
+
+working command is below 
+---------------------------------------
+docker exec -it spark-submit /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --deploy-mode client \
+  --jars /opt/spark-jars/sedona-spark-shaded-3.5_2.12-1.5.1.jar,/opt/spark-jars/geotools-wrapper-1.5.1-28.2.jar \
+  --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+  --conf spark.kryo.registrator=org.apache.sedona.core.serde.SedonaKryoRegistrator \
+  /opt/spark-jobs/test_sedona.py
+
+
+docker exec -it spark-submit /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --deploy-mode client \
+  --jars /opt/spark-jars/sedona-spark-shaded-3.5_2.12-1.5.1.jar,/opt/spark-jars/geotools-wrapper-1.5.1-28.2.jar \
+  --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+  --conf spark.kryo.registrator=org.apache.sedona.core.serde.SedonaKryoRegistrator \
+  /opt/spark-jobs/test_sedona_2.py
+  
+
+ docker exec -it spark-submit /opt/spark/bin/spark-shell --version
+ 
+ Environment Summary
+Component	Version
+Spark	3.5.6
+Scala	2.12.18
+Java	11.0.27 (OpenJDK)
+
+
+
+Delete from hdfs file 
+docker exec -it hadoop-namenode hadoop fs -rm -r /user/btcchl0040/sar/tiles
+
+
+
+
+iceberg
+
+
+/opt/spark/bin/pyspark \
+--jars /opt/spark-jars/iceberg-spark-runtime-4.0_2.13-1.10.0.jar,/opt/spark-jars/sedona-spark-shaded-4.0_2.13-1.8.1.jar,/opt/spark-jars/geotools-wrapper-1.8.1-33.1.jar \
+--conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,org.apache.sedona.viz.sql.SedonaVizExtensions \
+--conf spark.sql.catalog.local=org.apache.iceberg.spark.SparkCatalog \
+--conf spark.sql.catalog.local.type=hadoop \
+--conf spark.sql.catalog.local.warehouse=/opt/spark/warehouse
+
+
+from sedona.spark.SedonaContext import SedonaContext
+sedona = SedonaContext.create(spark)
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS local.flood_db.tile_metadata (
+    tile_id STRING,       -- Unique ID for the SAR tile
+    tile_path STRING,     -- Where the Parquet file lives
+    bbox BINARY,          -- The spatial bounding box (math)
+    processed_at TIMESTAMP -- When the mask was created
+) 
+USING iceberg
+""")
+
+# 1. SAR Metadata: Orbit path, Sensor (Sentinel-1), and the Footprint
+# These coordinates represent a typical 20km x 20km SAR tile footprint
+lon_min, lat_min = 76.50, 12.10
+lon_max, lat_max = 76.70, 12.30
+
+spark.sql(f"""
+INSERT INTO local.flood_db.tile_metadata
+VALUES (
+    'S1A_IW_GRDH_20240124_MYS',         -- Standard SAR Product ID
+    '/data/masks/mysore_flood_v1.parquet', -- Path to processed binary mask
+    ST_AsBinary(ST_MakeEnvelope({lon_min}, {lat_min}, {lon_max}, {lat_max})), 
+    current_timestamp()
+)
+""")
+
+
+# Query: Find SAR tiles where the footprint 'Contains' our point of interest
+target_lon = 76.55
+target_lat = 12.15
+
+spark.sql(f"""
+SELECT 
+    tile_id, 
+    processed_at
+FROM local.flood_db.tile_metadata
+WHERE ST_Contains(ST_GeomFromWKB(bbox), ST_Point({target_lon}, {target_lat}))
+""").show()

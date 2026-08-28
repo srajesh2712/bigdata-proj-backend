@@ -1,0 +1,76 @@
+FROM apache/spark:4.0.0
+
+USER root
+
+# 1. Install System Dependencies
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    libgdal-dev \
+    g++ \
+    openjdk-17-jdk-headless \
+    wget \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+
+# 2. Copy your LOCAL supporting files into the image
+# This creates a small folder (~5MB) instead of 700MB
+COPY ./native /opt/hadoop/lib/native
+
+# Copy SNAP binaries
+COPY ./esa-snap /opt/snap
+RUN chmod +x /opt/snap/bin/gpt \
+    && ln -sf /opt/snap/bin/gpt /usr/bin/gpt
+
+# Add snap/bin to PATH
+ENV PATH="/opt/snap/bin:${PATH}"
+
+# 3. Setup Environment for Native libhdfs
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV HADOOP_HOME=/opt/hadoop
+ENV ARROW_LIBHDFS_DIR=/opt/hadoop/lib/native
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$JAVA_HOME/lib/server:$ARROW_LIBHDFS_DIR
+
+# 4. Use Spark's built-in jars for the Classpath
+ENV CLASSPATH="/opt/spark/conf:/opt/spark/jars/*"
+
+
+# Link SNAP if mounted from host
+RUN ln -s /opt/snap/bin/gpt /usr/bin/gpt || true \
+    && echo "snap.main.headless=true" >> /opt/snap/etc/snap.properties || true
+
+
+
+# 5. Install Python stack
+RUN pip3 install --no-cache-dir \
+    numpy \
+    rasterio \
+    rioxarray \
+    xarray \
+    pyarrow \
+    fsspec \
+    zarr \ 
+    ipython \
+    pygeos \
+    shapely \
+    pandas\
+    scikit-image \
+    scikit-learn
+    
+RUN pip3 install apache-sedona==1.8.1
+# -------------------------------------------------------------------
+# Python configuration
+# -------------------------------------------------------------------
+ENV PYSPARK_PYTHON=python3
+ENV PYSPARK_DRIVER_PYTHON=python3
+
+
+WORKDIR /opt/spark/work-dir
+RUN groupadd -g 1000 btcchl0040 || true && \
+    useradd -m -u 1000 -g 1000 -s /bin/bash btcchl0040 || true
+RUN mkdir -p /opt/spark/work /opt/spark/conf /opt/spark/warehouse && \
+    chown -R btcchl0040:btcchl0040 /opt/spark/work /opt/spark/conf /opt/spark/warehouse /opt/spark/work-dir
+ENV USER=btcchl0040
+ENV HADOOP_USER_NAME=btcchl0040
+
+USER btcchl0040

@@ -7,6 +7,13 @@ import fsspec
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, lit, to_timestamp, unix_timestamp
 from pyspark.sql.types import StringType
+import rioxarray
+
+from datetime import datetime
+
+
+def current_time():
+    return datetime.now()
 
 # ----------------------------
 # Configuration
@@ -29,9 +36,60 @@ HDFS_BASE = "/user/btcchl0040/spark_preprocessed"
 # ----------------------------
 spark = SparkSession.builder.appName("SAR_DB_Driven").getOrCreate()
 
-# ----------------------------
+
+import tempfile
+import shutil
+import fsspec
+import rioxarray
+
+def convert_hdfs_tiff_to_zarr(hdfs_tiff_path):
+    """
+    Converts a GeoTIFF stored in HDFS to a Zarr dataset
+    and stores it in the same HDFS directory.
+    """
+
+    fs = fsspec.filesystem(
+        "hdfs",
+        host="namenode",
+        port=8020,
+        user=HADOOP_USER
+    )
+
+    hdfs_zarr_path = hdfs_tiff_path.replace(".tif", ".zarr")
+
+    # Temporary local directory
+    local_zarr = tempfile.mkdtemp(prefix="zarr_")
+
+    try:
+
+        # Read TIFF directly from HDFS
+        with fs.open(hdfs_tiff_path, "rb") as f:
+            da = rioxarray.open_rasterio(f)
+
+        da = da.drop_vars("spatial_ref", errors="ignore")
+
+        da.to_dataset(name="band_data").to_zarr(
+            local_zarr,
+            mode="w",
+            consolidated=False
+        )
+
+        # Upload entire Zarr directory
+        fs.put(
+            local_zarr,
+            hdfs_zarr_path,
+            recursive=True
+        )
+
+        return hdfs_zarr_path
+
+    finally:
+        shutil.rmtree(local_zarr, ignore_errors=True)
+
+
+
 # HDFS upload helper
-# ----------------------------
+
 def write_to_hdfs(local_file_path, hdfs_target_path):
     fs = fsspec.filesystem("hdfs", host="namenode", port=8020, user=HADOOP_USER)
     hdfs_dir = os.path.dirname(hdfs_target_path)
@@ -40,9 +98,9 @@ def write_to_hdfs(local_file_path, hdfs_target_path):
     fs.put(local_file_path, hdfs_target_path)
     return hdfs_target_path
 
-# ----------------------------
+
 # SNAP Graph updater
-# ----------------------------
+
 def update_snap_graph(xml_path, new_input_safe_path, new_geo_region, new_band_names, new_output_tiff_path, output_path):
     tree = ET.parse(xml_path)
     root = tree.getroot()
@@ -79,7 +137,7 @@ def process_tiles_in_partition(records):
     partition_results = []
 
     for payload in records:
-        starttime = datetime.now().strftime("%Y%m%d_%H%M%S")
+        pipeline_start = current_time()
         temp_graph = os.path.join("/tmp", f"graph_{payload['job_id']}.xml")
         
         try:
@@ -96,33 +154,60 @@ def process_tiles_in_partition(records):
             # Step 2: Synchronized execution arguments matching Standalone environment
             cmd = [
                 gpt_command, temp_graph,
-                "-e",
-                "-c", "2G",
-                "-J-Xmx6G",
-                "-q", "2",
-                "-J-Duser.home=/tmp",
-                "-Dsnap.jai.defaultTileSize=512",
-                "-Dsnap.dataio.reader.tileWidth=512",
-                "-Dsnap.dataio.reader.tileHeight=512",
-                "-Djava.awt.headless=true",
-                "-PexternalOrbitFile=none"
+
+                "-e",  # Enable detailed error diagnostics
+                "-c", "2G",  # Allocate 2 GB to the internal SNAP tile cache
+                "-J-Xmx6G",  # Limit Java Virtual Machine heap memory to 6 GB
+                "-q", "2",  # Restrict execution thread pool to 2 threads
+                "-J-Duser.home=/tmp",  # Set temporary user home directory to prevent container permission conflicts
+                "-Dsnap.jai.defaultTileSize=512",  # Set JAI processing tile size to 512x512 pixels
+                "-Dsnap.dataio.reader.tileWidth=512",  # Set image reader tile width to 512 pixels
+                "-Dsnap.dataio.reader.tileHeight=512",  # Set image reader tile height to 512 pixels
+                "-Djava.awt.headless=true",  # Disable GUI rendering components for headless server environments
+                "-Dsnap.productlibrary.disable=true",  # Disable product library updates to accelerate initialization
+                "-PexternalOrbitFile=none"  # Suppress external precise orbit file downloads
             ]
             
             try:
+                preprocess_start = current_time()
                 # Use DEVNULL to bypass background log processing chains
                 subprocess.run(
-                    cmd,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.STDOUT,
-                    check=True
+                    cmd,  # Executes the command stored in the 'cmd' list.
+                    stdout=subprocess.DEVNULL,  # Discards all standard output (stdout).
+                    stderr=subprocess.STDOUT,  # Redirects standard error (stderr) to stdout (also discarded).
+                    check=True  # Raises a CalledProcessError if the command exits with a non-zero status.
                 )
+                preprocess_end = current_time()
+
+                preprocessing_seconds = (
+                        preprocess_end - preprocess_start
+                ).total_seconds()
             except subprocess.CalledProcessError as e:
                 raise RuntimeError(f"GPT failed inside Spark worker with code {e.returncode}")
 
             # Step 3: HDFS Upload
             file_size = os.path.getsize(payload['output_tiff'])
+            hdfs_upload_start = current_time()
             hdfs_path = write_to_hdfs(payload['output_tiff'], payload['hdfs_output_path'])
+            hdfs_upload_end = current_time()
+            hdfs_upload_seconds = (
+                    hdfs_upload_end - hdfs_upload_start
+            ).total_seconds()
 
+
+            # converting tif to zarr
+            zarr_start = current_time()
+            hdfs_zarr_path = convert_hdfs_tiff_to_zarr(hdfs_path)
+            zarr_end = current_time()
+
+            zarr_conversion_seconds = (
+                    zarr_end - zarr_start
+            ).total_seconds()
+
+            pipeline_end = current_time()
+            pipeline_seconds = (
+                    pipeline_end - pipeline_start
+            ).total_seconds()
             # Append successful result record
             partition_results.append({
                 
@@ -131,9 +216,12 @@ def process_tiles_in_partition(records):
                 "status": "FINISHED",
                 "code": 0,
                 "hdfs_path": hdfs_path,
-                "start_time": starttime,
-                "stop_time": datetime.now().strftime("%Y%m%d_%H%M%S"),
+                "zarr_path": hdfs_zarr_path,
                 "file_size": file_size,
+                "preprocessing_seconds": preprocessing_seconds,
+                "hdfs_upload_seconds": hdfs_upload_seconds,
+                "zarr_conversion_seconds": zarr_conversion_seconds,
+                "pipeline_seconds": pipeline_seconds,
                 "format": "TIFF",
                 "type": "PREPROCESSED_TILE",
                 "region_wkt": payload['region_wkt'],
@@ -146,8 +234,7 @@ def process_tiles_in_partition(records):
                 "status": "ERROR",
                 "code": -1,
                 "msg": f"{str(e)} | Traceback: {traceback.format_exc()}",
-                "start_time": starttime,
-                "stop_time": datetime.now().strftime("%Y%m%d_%H%M%S"),
+                "pipeline_seconds": pipeline_seconds,
                 "region_wkt": payload['region_wkt']
             })
             
@@ -156,8 +243,9 @@ def process_tiles_in_partition(records):
 # ----------------------------
 # Main: fetch tasks and process
 # ----------------------------
-def preprocess_sar_from_db(job_ids):
-    job_ids_str = ",".join(map(str, job_ids))
+#def preprocess_sar_from_db(job_ids):
+def preprocess_sar_from_db():
+    #job_ids_str = ",".join(map(str, job_ids))
     
     query = f"""
     (SELECT j.job_name,
@@ -169,9 +257,10 @@ def preprocess_sar_from_db(job_ids):
             '{HDFS_BASE}/' || j.job_id || '/' || j.job_id || '_tile.tif' AS hdfs_output_path
      FROM sar.processing_job j
      JOIN sar.sar_scene_master s ON j.scene_id = s.scene_id
-     WHERE j.job_id IN ({job_ids_str}) AND j.job_status IN ('CREATED','QUEUED')
+     WHERE j.job_status IN ('CREATED','QUEUED') AND j.engine='SPARK'
     ) as job_payload
     """
+    # WHERE j.job_id IN ({job_ids_str}) AND j.job_status IN ('CREATED','QUEUED') AND j.engine='SPARK'
     payload_df = spark.read.jdbc(JDBC_URL, query, properties=DB_PROPERTIES)
     print("DEBUG: Preparing to send the following payload to Workers:")
     payload_df.show(truncate=False)
@@ -180,8 +269,9 @@ def preprocess_sar_from_db(job_ids):
     base_rdd = payload_df.rdd.map(lambda row: row.asDict())
     
     # Force partitioning dynamically down to node job groups at the RDD layer
+    # len(job_ids) as i have two spark executors i am using 2 partition
     payload_rdd = base_rdd.keyBy(lambda r: r["job_id"]) \
-                      .partitionBy(len(job_ids)) \
+                      .partitionBy(2) \
                       .values()
 
     results = payload_rdd.mapPartitions(process_tiles_in_partition).collect()
@@ -205,12 +295,10 @@ def preprocess_sar_from_db(job_ids):
             col("hdfs_path"),
             lit("SPARK").cast(StringType()).alias("local_path"), 
             col("file_size").alias("file_size_bytes").cast("long"),
-            to_timestamp(col("start_time"), "yyyyMMdd_HHmmss").alias("start_time"),
-            to_timestamp(col("stop_time"), "yyyyMMdd_HHmmss").alias("stop_time"),
-            (
-                unix_timestamp(col("stop_time"), "yyyyMMdd_HHmmss") - 
-                unix_timestamp(col("start_time"), "yyyyMMdd_HHmmss")
-            ).alias("duration_seconds"),
+            col("preprocessing_seconds"),
+            col("hdfs_upload_seconds"),
+            col("zarr_conversion_seconds"),
+            col("pipeline_seconds"),
             col("region_wkt").alias("region_wkt")
         )
 
@@ -229,5 +317,5 @@ def preprocess_sar_from_db(job_ids):
 # Entry point
 # ----------------------------
 if __name__ == "__main__":
-    TARGET_JOBS = [8, 7, 6, 5]
-    preprocess_sar_from_db(TARGET_JOBS)
+    #TARGET_JOBS = [8, 7, 6, 5]
+    preprocess_sar_from_db()

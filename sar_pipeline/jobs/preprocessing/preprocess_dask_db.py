@@ -42,6 +42,7 @@ def get_hdfs_dir_size(hdfs_path):
         
         
 def write_to_hdfs(local_file_path, hdfs_target_path):
+    """ Write the file to HDFS """
     fs = fsspec.filesystem("hdfs", host="namenode", port=8020, user=HADOOP_USER)
     hdfs_dir = os.path.dirname(hdfs_target_path)
     if not fs.exists(hdfs_dir):
@@ -49,7 +50,74 @@ def write_to_hdfs(local_file_path, hdfs_target_path):
     fs.put(local_file_path, hdfs_target_path)
     return hdfs_target_path
 
+import tempfile
+import shutil
+import dask
+
+
+#dask.config.set(scheduler="synchronous") // commenting this as later i will make this run in parallel
+
+
+def convert_hdfs_tiff_to_zarr(hdfs_tiff_path):
+
+    fs = fsspec.filesystem(
+        "hdfs",
+        host="namenode",
+        port=8020,
+        user=HADOOP_USER
+    )
+
+    hdfs_zarr_path = hdfs_tiff_path.replace(".tif", ".zarr")
+
+    local_zarr_path = tempfile.mkdtemp(prefix="zarr_")
+
+    try:
+
+        with fs.open(hdfs_tiff_path, "rb") as f:
+
+            da = rioxarray.open_rasterio(f)
+
+            # Force loading before closing HDFS stream
+            da.load()
+
+        # Preserve CRS and transform
+        da = da.rio.write_crs(da.rio.crs) # write crs
+        da = da.rio.write_transform() # write the affine transform
+
+        ds = da.to_dataset(
+            name="band_data"
+        ) # using xarray   and convert data array to data set
+
+        ds.to_zarr(local_zarr_path, mode="w", consolidated=False)  # Save dataset as a Zarr store, overwriting existing data without consolidating metadata
+
+        # Upload Zarr directory to HDFS
+        fs.put(
+            local_zarr_path,
+            hdfs_zarr_path,
+            recursive=True
+        )
+
+        return hdfs_zarr_path
+
+    finally:
+        shutil.rmtree(local_zarr_path, ignore_errors=True)
+
 def update_snap_graph(xml_path, new_input_safe_path, new_geo_region, new_band_names, new_output_tiff_path, output_path):
+    """
+        Parses an ESA SNAP XML processing graph and updates its node parameters with new file paths,
+        spectral bands, and spatial subset coordinates before saving the modified XML.
+
+        Parameters:
+            xml_path (str): Path to the template SNAP graph XML file.
+            new_input_safe_path (str): File path for the input product ('Read' node).
+            new_geo_region (str): WKT polygon geometry specifying the bounding box ('Subset' node).
+            new_band_names (str): Comma-separated band names to extract ('Subset' node).
+            new_output_tiff_path (str): Destination path for the processed output ('Write' node).
+            output_path (str): Target file path to write the updated XML graph.
+
+        Returns:
+            str: The path to the saved XML graph file.
+        """
     tree = ET.parse(xml_path)
     root = tree.getroot()
     def find_node_param(node_id, param_name):
@@ -68,14 +136,19 @@ def update_snap_graph(xml_path, new_input_safe_path, new_geo_region, new_band_na
     return output_path
 
 def process_tile_worker(payload):
-    """Executes inside the dask-worker container"""
-    
-    # Global cluster limit to process exactly 2 tiles at a time total
-    with Semaphore(max_leases=4, name="global_gpt_limit"):
+    """ Executes inside the dask-worker container
+        Dask worker task that processes a geospatial tile by running an ESA SNAP GPT graph,
+        uploading the resulting GeoTIFF to HDFS, and converting the file to a Zarr dataset.
+
+        Executes under a distributed Dask semaphore limit to constrain maximum concurrent GPT processes.
+        Tracks stage timings, returns processing metadata on success, and catches exceptions with tracebacks.
+        """
+    # Global cluster limit to process exactly 4 tiles at a time total
+    with Semaphore(max_leases=4, name="global_gpt_limit"): # concurrency lock tool semaphore which allows N threads to process at a time
         input_file = payload['local_path']
         output_tiff = payload['output_tiff']
         hdfs_output_path = payload['hdfs_output_path']
-        hdfs_zarr_path = hdfs_output_path.replace(".tif", ".b_storage")
+        hdfs_zarr_path = hdfs_output_path.replace(".tif", ".storage")
         worker_tmp = f"/tmp/tile_{payload['job_id']}.xml"
         gpt_bin = "/opt/snap/bin/gpt"
         
@@ -94,34 +167,75 @@ def process_tile_worker(payload):
             # Fixed syntax typo: "Djava.awt.headless=true" -> "-Djava.awt.headless=true"
             cmd = [
                 gpt_bin, worker_tmp,
-                "-e",
-                "-c", "2G",
-                "-J-Xmx6G",
-                "-q", "2",
-                "-J-Duser.home=/tmp",
-                "-Dsnap.jai.defaultTileSize=512",
-                "-Dsnap.dataio.reader.tileWidth=512",
-                "-Dsnap.dataio.reader.tileHeight=512",
-                "-Djava.awt.headless=true",
-                "-Dsnap.productlibrary.disable=true",
-                "-PexternalOrbitFile=none"
+                "-e", # Enable detailed error diagnostics
+                "-c", "2G", # Allocate 2 GB to the internal SNAP tile cache
+                "-J-Xmx6G",# Limit Java Virtual Machine heap memory to 6 GB
+                "-q", "2", # Restrict execution thread pool to 2 threads
+                "-J-Duser.home=/tmp", # Set temporary user home directory to prevent container permission conflicts
+                "-Dsnap.jai.defaultTileSize=512", # Set JAI processing tile size to 512x512 pixels
+                "-Dsnap.dataio.reader.tileWidth=512", # Set image reader tile width to 512 pixels
+                "-Dsnap.dataio.reader.tileHeight=512", # Set image reader tile height to 512 pixels
+                "-Djava.awt.headless=true", # Disable GUI rendering components for headless server environments
+                "-Dsnap.productlibrary.disable=true", # Disable product library updates to accelerate initialization
+                "-PexternalOrbitFile=none" # Suppress external precise orbit file downloads
             ]
-            start_time_raw = datetime.now()
-            start_time_str = start_time_raw.strftime("%Y%m%d_%H%M%S")
+            pipeline_start = datetime.now()
+
+            # -----------------------------
+            # Stage 1: SNAP preprocessing
+            # -----------------------------
+            preprocess_start = datetime.now()
             try:
+                # Execute the SNAP GPT command silently and raise an exception if execution fails
                 subprocess.run(
-                    cmd, 
-                    stdout=subprocess.DEVNULL, 
-                    stderr=subprocess.STDOUT, 
-                    check=True
+                    cmd,
+                    stdout=subprocess.DEVNULL,  # Suppress standard output
+                    stderr=subprocess.STDOUT,  # Redirect standard error to stdout (also suppressed)
+                    check=True  # Raise CalledProcessError if return code is non-zero
                 )
             except subprocess.CalledProcessError as e:
                 raise RuntimeError(f"GPT failed with code {e.returncode}")
-            
-            stop_time_raw = datetime.now()
+
+            preprocess_end = datetime.now()
+
+            preprocessing_seconds = (
+                    preprocess_end - preprocess_start
+            ).total_seconds() # calculate the preprocessing duration
+
             file_size = os.path.getsize(output_tiff)
+            # calculate hdfs update duration
+            hdfs_upload_start = datetime.now()
             hdfs_written_path = write_to_hdfs(output_tiff, hdfs_output_path)
-            
+            hdfs_upload_end = datetime.now()
+
+            hdfs_upload_seconds = (
+                    hdfs_upload_end - hdfs_upload_start
+            ).total_seconds()
+
+            # -----------------------------
+            # Stage 3: Zarr conversion
+            # -----------------------------
+            zarr_start = datetime.now()
+
+            hdfs_zarr_path = convert_hdfs_tiff_to_zarr(
+                hdfs_written_path
+            )
+
+            zarr_end = datetime.now()
+
+            zarr_conversion_seconds = (
+                    zarr_end - zarr_start
+            ).total_seconds()
+
+            # -----------------------------
+            # Total pipeline time
+            # -----------------------------
+            pipeline_end = datetime.now()
+
+            pipeline_seconds = (
+                    pipeline_end - pipeline_start
+            ).total_seconds()
+
             fs = fsspec.filesystem("hdfs", host="namenode", port=8020, user=HADOOP_USER)
             if not fs.exists(os.path.dirname(hdfs_zarr_path)):
                 fs.makedirs(os.path.dirname(hdfs_zarr_path))
@@ -135,9 +249,10 @@ def process_tile_worker(payload):
                 "status": "FINISHED",
                 "hdfs_path": hdfs_written_path,
                 "file_size": file_size,
-                "start_time": start_time_str,
-                "stop_time": stop_time_raw.strftime("%Y%m%d_%H%M%S"),
-                "duration": int((stop_time_raw - start_time_raw).total_seconds()),
+                "preprocessing_seconds": preprocessing_seconds,
+                "hdfs_upload_seconds": hdfs_upload_seconds,
+                "zarr_conversion_seconds": zarr_conversion_seconds,
+                "pipeline_seconds": pipeline_seconds,
                 "region_wkt": payload['region_wkt'],
                 "tiff_size": tiff_size,
             }
@@ -148,8 +263,9 @@ def process_tile_worker(payload):
                 "msg": str(e),
                 "trace": traceback.format_exc()
             }
-
-def fetch_tasks_from_db(job_id):
+# j.job_id = ANY(%s)
+# function to fetch the tasks from db
+def fetch_tasks_from_db():
     conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor(cursor_factory=RealDictCursor)
     query = f"""
@@ -162,9 +278,9 @@ def fetch_tasks_from_db(job_id):
             '{HDFS_BASE}/' || j.job_id || '/' || j.job_id || '_tile.tif' AS hdfs_output_path
      FROM sar.processing_job j
      JOIN sar.sar_scene_master s ON j.scene_id = s.scene_id
-     WHERE j.job_id = ANY(%s) AND j.job_status IN ('CREATED','QUEUED')
+     WHERE j.job_status IN ('CREATED','QUEUED') AND j.engine = 'DASK'
     """
-    cur.execute(query, (job_id,))
+    cur.execute(query)
     tasks = cur.fetchall()
     cur.close()
     conn.close()
@@ -173,11 +289,11 @@ def fetch_tasks_from_db(job_id):
 # --- Main Entry Point ---
 
 if __name__ == "__main__":
-    JOB_ID = [1,2,3,4]
+    #JOB_ID = [1,2,3,4]
     
-    tiles_to_process = fetch_tasks_from_db(JOB_ID)
+    tiles_to_process = fetch_tasks_from_db()
     if not tiles_to_process:
-        print(f"No pending tasks found for Job {JOB_ID}. Exiting.")
+        print(f"No pending tasks found for Job . Exiting.")
         exit()
 
     client = Client('dask-scheduler:8786')
@@ -193,7 +309,7 @@ if __name__ == "__main__":
 
     for r in results:
         if r['status'] == "FINISHED":
-            print(f"✅ Task {r['job_id']} finished in {r['duration']}s. {r}")
+            print(f"✅ Task {r['job_id']} finished in {r['preprocessing_seconds']}s. {r}")
             finished_task_ids.append(r['job_id'])
             success_data.append((
                
@@ -204,13 +320,15 @@ if __name__ == "__main__":
                 r['hdfs_path'],
                 "DASK",
                 r['file_size'],
-                datetime.strptime(r['start_time'], "%Y%m%d_%H%M%S"),
-                datetime.strptime(r['stop_time'], "%Y%m%d_%H%M%S"),
-                r['duration'],
+                r['preprocessing_seconds'],
+                r['hdfs_upload_seconds'],
+                r['zarr_conversion_seconds'],
+                r['pipeline_seconds'],
                 r['region_wkt']
             ))
         else:
-            print(f"❌ Task {r['task_id']} failed: {r.get('msg')}")
+            print(f"❌ Task failed: {r.get('msg')}")
+            print(r.get('trace'))
 
     # 5. DB Logging
     if success_data:
@@ -222,8 +340,7 @@ if __name__ == "__main__":
             insert_query = """
                 INSERT INTO sar.processing_artifacts (
                     job_id,  scene_id, artifact_type, file_format, 
-                    hdfs_path, local_path, file_size_bytes, start_time, stop_time, duration_seconds, region_wkt
-                ) VALUES %s
+                    hdfs_path, local_path, file_size_bytes,preprocessing_seconds, hdfs_upload_seconds, zarr_conversion_seconds, pipeline_seconds, region_wkt ) VALUES %s
             """
             execute_values(cur, insert_query, success_data)
             
